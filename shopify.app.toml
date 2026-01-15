@@ -1,0 +1,20 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+name = "sales-analyzer"
+client_id = "" # Add your API key here
+application_url = "https://your-ngrok-url.ngrok.io"
+embedded = true
+
+[access_scopes]
+scopes = "read_orders,read_products"
+
+[auth]
+redirect_urls = [
+  "https://your-ngrok-url.ngrok.io/api/shopify/callback"
+]
+
+[webhooks]
+api_version = "2024-01"
+
+[pos]
+embedded = false
