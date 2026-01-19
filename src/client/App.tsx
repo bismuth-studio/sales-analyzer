@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, Page, Card, Layout, Text } from '@shopify/polaris';
 import '@shopify/polaris/build/esm/styles.css';
-import OrdersList from '../components/OrdersList';
+import OrdersListWithFilters from '../components/OrdersListWithFilters';
 
 function App() {
   const [shop, setShop] = useState<string>('');
@@ -32,7 +32,7 @@ function App() {
           </Layout.Section>
 
           <Layout.Section>
-            <OrdersList shop={shop} />
+            <OrdersListWithFilters shop={shop} />
           </Layout.Section>
         </Layout>
       </Page>
