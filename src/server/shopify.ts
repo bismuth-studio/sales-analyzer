@@ -54,6 +54,11 @@ router.get('/callback', async (req, res) => {
     // Store session
     sessionStorage.set(session.shop, session);
 
+    // Log access token for bulk order generation script
+    console.log('\n🔑 Access Token (add to .env as SHOPIFY_ACCESS_TOKEN):');
+    console.log(session.accessToken);
+    console.log('');
+
     // Redirect to app with shop parameter
     res.redirect(`/?shop=${session.shop}&host=${req.query.host}`);
   } catch (error) {
