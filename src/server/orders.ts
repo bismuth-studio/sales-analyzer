@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getSession } from './shopify';
+import { getSession, shopify } from './shopify';
 
 const router = Router();
 
@@ -34,15 +34,7 @@ router.get('/recent', async (req: Request, res: Response) => {
     }
 
     // Create a REST client for this session
-    const client = new (await import('@shopify/shopify-api')).shopifyApi({
-      apiKey: process.env.SHOPIFY_API_KEY!,
-      apiSecretKey: process.env.SHOPIFY_API_SECRET!,
-      scopes: process.env.SHOPIFY_SCOPES?.split(',') || ['read_orders'],
-      hostName: process.env.SHOPIFY_APP_URL?.replace(/https?:\/\//, '') || 'localhost:3000',
-      hostScheme: 'https',
-      apiVersion: (await import('@shopify/shopify-api')).LATEST_API_VERSION,
-      isEmbeddedApp: true,
-    }).clients.Rest({ session });
+    const client = new shopify.clients.Rest({ session });
 
     // Fetch last 10 orders
     const response = await client.get({

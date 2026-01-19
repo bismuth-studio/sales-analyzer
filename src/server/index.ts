@@ -23,13 +23,8 @@ app.use('/api/shopify', shopifyRouter);
 app.use('/api/orders', ordersRouter);
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', message: 'Sales Analyzer API is running' });
-});
-
-// Serve React app for all other routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../../dist/client/index.html'));
 });
 
 app.listen(PORT, () => {

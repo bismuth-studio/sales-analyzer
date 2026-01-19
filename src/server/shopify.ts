@@ -1,6 +1,10 @@
 import { Router } from 'express';
+import { config } from 'dotenv';
 import '@shopify/shopify-api/adapters/node';
-import { shopifyApi, LATEST_API_VERSION, Session } from '@shopify/shopify-api';
+import { shopifyApi, Session, ApiVersion } from '@shopify/shopify-api';
+
+// Load environment variables
+config();
 
 const router = Router();
 
@@ -11,7 +15,7 @@ export const shopify = shopifyApi({
   scopes: process.env.SHOPIFY_SCOPES?.split(',') || ['read_orders'],
   hostName: process.env.SHOPIFY_APP_URL?.replace(/https?:\/\//, '') || 'localhost:3000',
   hostScheme: 'https',
-  apiVersion: LATEST_API_VERSION,
+  apiVersion: ApiVersion.January26,
   isEmbeddedApp: true,
 });
 

@@ -8,6 +8,9 @@ import {
   Text,
   EmptyState,
   BlockStack,
+  InlineStack,
+  Select,
+  Button,
 } from '@shopify/polaris';
 
 interface Order {
@@ -33,6 +36,9 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [sortedOrders, setSortedOrders] = useState<Order[]>([]);
+  const [sortColumn, setSortColumn] = useState<number>(2); // Default to Date column
+  const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
 
   useEffect(() => {
     if (!shop) {
@@ -42,6 +48,62 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
 
     fetchOrders();
   }, [shop]);
+
+  useEffect(() => {
+    if (orders.length > 0) {
+      applySorting(sortColumn, sortDirection);
+    }
+  }, [orders]);
+
+  const applySorting = (columnIndex: number, direction: 'ascending' | 'descending') => {
+    const sorted = [...orders].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (columnIndex) {
+        case 0: // Order
+          aValue = a.name;
+          bValue = b.name;
+          break;
+        case 1: // Customer
+          aValue = a.email || '';
+          bValue = b.email || '';
+          break;
+        case 2: // Date
+          aValue = new Date(a.created_at).getTime();
+          bValue = new Date(b.created_at).getTime();
+          break;
+        case 3: // Total
+          aValue = parseFloat(a.total_price);
+          bValue = parseFloat(b.total_price);
+          break;
+        case 4: // Status
+          aValue = a.financial_status;
+          bValue = b.financial_status;
+          break;
+        case 5: // Items
+          aValue = a.line_items.length;
+          bValue = b.line_items.length;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+      if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+      return 0;
+    });
+
+    setSortedOrders(sorted);
+  };
+
+  const handleSortChange = (value: string) => {
+    const [columnStr, direction] = value.split('-');
+    const columnIndex = parseInt(columnStr);
+    setSortColumn(columnIndex);
+    setSortDirection(direction as 'ascending' | 'descending');
+    applySorting(columnIndex, direction as 'ascending' | 'descending');
+  };
 
   const fetchOrders = async () => {
     try {
@@ -143,21 +205,45 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
     );
   }
 
-  const rows = orders.map((order) => [
+  const rows = sortedOrders.map((order) => [
     order.name,
     order.email || 'N/A',
     formatDate(order.created_at),
-    `${order.currency} ${parseFloat(order.total_price).toFixed(2)}`,
+    parseFloat(order.total_price).toFixed(2),
     getStatusBadge(order.financial_status),
     order.line_items.length,
   ]);
 
+  const sortOptions = [
+    { label: 'Date (Newest first)', value: '2-descending' },
+    { label: 'Date (Oldest first)', value: '2-ascending' },
+    { label: 'Order (A-Z)', value: '0-ascending' },
+    { label: 'Order (Z-A)', value: '0-descending' },
+    { label: 'Customer (A-Z)', value: '1-ascending' },
+    { label: 'Customer (Z-A)', value: '1-descending' },
+    { label: 'Total (Low to High)', value: '3-ascending' },
+    { label: 'Total (High to Low)', value: '3-descending' },
+    { label: 'Status (A-Z)', value: '4-ascending' },
+    { label: 'Status (Z-A)', value: '4-descending' },
+    { label: 'Items (Fewest first)', value: '5-ascending' },
+    { label: 'Items (Most first)', value: '5-descending' },
+  ];
+
   return (
     <Card>
       <BlockStack gap="400">
-        <Text as="p" variant="bodyMd" fontWeight="semibold">
-          Your Last 10 Sales ({orders.length} orders)
-        </Text>
+        <InlineStack align="space-between" blockAlign="center">
+          <Text as="p" variant="bodyMd" fontWeight="semibold">
+            Your Last 10 Sales ({orders.length} orders)
+          </Text>
+          <Select
+            label="Sort by"
+            labelInline
+            options={sortOptions}
+            value={`${sortColumn}-${sortDirection}`}
+            onChange={handleSortChange}
+          />
+        </InlineStack>
         <DataTable
           columnContentTypes={['text', 'text', 'text', 'numeric', 'text', 'numeric']}
           headings={[
