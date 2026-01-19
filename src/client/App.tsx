@@ -26,7 +26,7 @@ function App() {
             <Card>
               <Text as="h2" variant="headingMd">Welcome to Sales Analyzer</Text>
               <Text as="p">
-                Track your sales data with precision. View your last 10 orders below.
+                Track your sales data with precision. View your last 50 orders below.
               </Text>
             </Card>
           </Layout.Section>

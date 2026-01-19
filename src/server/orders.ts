@@ -18,7 +18,7 @@ interface Order {
   }>;
 }
 
-// Get last 10 orders
+// Get last 50 orders
 router.get('/recent', async (req: Request, res: Response) => {
   try {
     const shop = req.query.shop as string;
@@ -36,11 +36,11 @@ router.get('/recent', async (req: Request, res: Response) => {
     // Create a REST client for this session
     const client = new shopify.clients.Rest({ session });
 
-    // Fetch last 10 orders
+    // Fetch last 50 orders
     const response = await client.get({
       path: 'orders',
       query: {
-        limit: '10',
+        limit: '50',
         status: 'any',
         fields: 'id,name,email,created_at,total_price,currency,financial_status,line_items',
       },
