@@ -542,16 +542,116 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     },
   ];
 
-  // Custom date range fields
+  // Build applied filters for display
   const appliedFilters = [];
-  if (dateRange.includes('custom') && (startDate || endDate)) {
+
+  // Date range filters
+  if (dateRange.length > 0) {
+    dateRange.forEach(range => {
+      const labels: { [key: string]: string } = {
+        today: 'Today',
+        yesterday: 'Yesterday',
+        last7days: 'Last 7 days',
+        last30days: 'Last 30 days',
+        thisweek: 'This week',
+        thismonth: 'This month',
+        custom: startDate && endDate ? `${startDate} to ${endDate}` : 'Custom date range',
+      };
+
+      appliedFilters.push({
+        key: `dateRange-${range}`,
+        label: labels[range] || range,
+        onRemove: () => {
+          setDateRange(dateRange.filter(d => d !== range));
+          if (range === 'custom') {
+            setStartDate('');
+            setEndDate('');
+          }
+        },
+      });
+    });
+  }
+
+  // Order status filters
+  if (orderStatus.length > 0) {
+    orderStatus.forEach(status => {
+      const labels: { [key: string]: string } = {
+        paid: 'Paid',
+        pending: 'Pending',
+        authorized: 'Authorized',
+        refunded: 'Refunded',
+        voided: 'Voided',
+      };
+
+      appliedFilters.push({
+        key: `status-${status}`,
+        label: labels[status] || status,
+        onRemove: () => setOrderStatus(orderStatus.filter(s => s !== status)),
+      });
+    });
+  }
+
+  // Day of week filters
+  if (dayOfWeek.length > 0) {
+    const dayLabels: { [key: string]: string } = {
+      '0': 'Sunday',
+      '1': 'Monday',
+      '2': 'Tuesday',
+      '3': 'Wednesday',
+      '4': 'Thursday',
+      '5': 'Friday',
+      '6': 'Saturday',
+    };
+
+    dayOfWeek.forEach(day => {
+      appliedFilters.push({
+        key: `day-${day}`,
+        label: dayLabels[day] || day,
+        onRemove: () => setDayOfWeek(dayOfWeek.filter(d => d !== day)),
+      });
+    });
+  }
+
+  // Price range filter
+  if (priceRange.includes('custom') && (minPrice || maxPrice)) {
+    let priceLabel = 'Price: ';
+    if (minPrice && maxPrice) {
+      priceLabel += `$${minPrice} - $${maxPrice}`;
+    } else if (minPrice) {
+      priceLabel += `$${minPrice}+`;
+    } else if (maxPrice) {
+      priceLabel += `up to $${maxPrice}`;
+    }
+
     appliedFilters.push({
-      key: 'customDate',
-      label: `Custom date: ${startDate || '...'} to ${endDate || '...'}`,
+      key: 'priceRange',
+      label: priceLabel,
       onRemove: () => {
-        setStartDate('');
-        setEndDate('');
-        setDateRange(dateRange.filter(d => d !== 'custom'));
+        setPriceRange([]);
+        setMinPrice('');
+        setMaxPrice('');
+      },
+    });
+  }
+
+  // Time range filter
+  if (timeRange.includes('custom') && (startTime || endTime)) {
+    let timeLabel = 'Time: ';
+    if (startTime && endTime) {
+      timeLabel += `${startTime} - ${endTime}`;
+    } else if (startTime) {
+      timeLabel += `after ${startTime}`;
+    } else if (endTime) {
+      timeLabel += `before ${endTime}`;
+    }
+
+    appliedFilters.push({
+      key: 'timeRange',
+      label: timeLabel,
+      onRemove: () => {
+        setTimeRange([]);
+        setStartTime('');
+        setEndTime('');
       },
     });
   }
