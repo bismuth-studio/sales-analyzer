@@ -5,8 +5,9 @@ import {
   Badge,
   Spinner,
   Banner,
-  TextContainer,
+  Text,
   EmptyState,
+  BlockStack,
 } from '@shopify/polaris';
 
 interface Order {
@@ -82,16 +83,16 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
   };
 
   const getStatusBadge = (status: string) => {
-    const statusMap: { [key: string]: 'success' | 'warning' | 'critical' | 'info' } = {
+    const statusMap: { [key: string]: 'success' | 'attention' | 'critical' | 'info' } = {
       paid: 'success',
-      pending: 'warning',
+      pending: 'attention',
       refunded: 'critical',
       voided: 'critical',
       authorized: 'info',
     };
 
     return (
-      <Badge status={statusMap[status] || 'info'}>
+      <Badge tone={statusMap[status] || 'info'}>
         {status.charAt(0).toUpperCase() + status.slice(1)}
       </Badge>
     );
@@ -110,7 +111,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
 
   if (error) {
     return (
-      <Banner status="critical" title="Error loading orders">
+      <Banner tone="critical" title="Error loading orders">
         <p>{error}</p>
       </Banner>
     );
@@ -153,23 +154,23 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
 
   return (
     <Card>
-      <TextContainer>
-        <p style={{ marginBottom: '16px', fontWeight: 600 }}>
+      <BlockStack gap="400">
+        <Text as="p" variant="bodyMd" fontWeight="semibold">
           Your Last 10 Sales ({orders.length} orders)
-        </p>
-      </TextContainer>
-      <DataTable
-        columnContentTypes={['text', 'text', 'text', 'numeric', 'text', 'numeric']}
-        headings={[
-          'Order',
-          'Customer',
-          'Date',
-          'Total',
-          'Status',
-          'Items',
-        ]}
-        rows={rows}
-      />
+        </Text>
+        <DataTable
+          columnContentTypes={['text', 'text', 'text', 'numeric', 'text', 'numeric']}
+          headings={[
+            'Order',
+            'Customer',
+            'Date',
+            'Total',
+            'Status',
+            'Items',
+          ]}
+          rows={rows}
+        />
+      </BlockStack>
     </Card>
   );
 };

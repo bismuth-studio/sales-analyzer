@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppProvider, Page, Card, Layout, TextContainer, Heading } from '@shopify/polaris';
+import { AppProvider, Page, Card, Layout, Text } from '@shopify/polaris';
 import '@shopify/polaris/build/esm/styles.css';
 import OrdersList from '../components/OrdersList';
 
@@ -24,12 +24,10 @@ function App() {
         <Layout>
           <Layout.Section>
             <Card>
-              <TextContainer>
-                <Heading>Welcome to Sales Analyzer</Heading>
-                <p>
-                  Track your sales data with precision. View your last 10 orders below.
-                </p>
-              </TextContainer>
+              <Text as="h2" variant="headingMd">Welcome to Sales Analyzer</Text>
+              <Text as="p">
+                Track your sales data with precision. View your last 10 orders below.
+              </Text>
             </Card>
           </Layout.Section>
 
