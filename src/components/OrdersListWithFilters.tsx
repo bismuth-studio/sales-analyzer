@@ -511,9 +511,36 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
           <ChoiceList
             title="Time of day"
             titleHidden
-            choices={[{ label: 'Custom time range', value: 'custom' }]}
+            choices={[
+              { label: '12am - 1am', value: '00:00-01:00' },
+              { label: '1am - 2am', value: '01:00-02:00' },
+              { label: '2am - 3am', value: '02:00-03:00' },
+              { label: '3am - 4am', value: '03:00-04:00' },
+              { label: '4am - 5am', value: '04:00-05:00' },
+              { label: '5am - 6am', value: '05:00-06:00' },
+              { label: '6am - 7am', value: '06:00-07:00' },
+              { label: '7am - 8am', value: '07:00-08:00' },
+              { label: '8am - 9am', value: '08:00-09:00' },
+              { label: '9am - 10am', value: '09:00-10:00' },
+              { label: '10am - 11am', value: '10:00-11:00' },
+              { label: '11am - 12pm', value: '11:00-12:00' },
+              { label: '12pm - 1pm', value: '12:00-13:00' },
+              { label: '1pm - 2pm', value: '13:00-14:00' },
+              { label: '2pm - 3pm', value: '14:00-15:00' },
+              { label: '3pm - 4pm', value: '15:00-16:00' },
+              { label: '4pm - 5pm', value: '16:00-17:00' },
+              { label: '5pm - 6pm', value: '17:00-18:00' },
+              { label: '6pm - 7pm', value: '18:00-19:00' },
+              { label: '7pm - 8pm', value: '19:00-20:00' },
+              { label: '8pm - 9pm', value: '20:00-21:00' },
+              { label: '9pm - 10pm', value: '21:00-22:00' },
+              { label: '10pm - 11pm', value: '22:00-23:00' },
+              { label: '11pm - 12am', value: '23:00-00:00' },
+              { label: 'Custom time range', value: 'custom' },
+            ]}
             selected={timeRange}
             onChange={setTimeRange}
+            allowMultiple
           />
           {timeRange.includes('custom') && (
             <InlineStack gap="200">
