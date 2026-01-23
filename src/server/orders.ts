@@ -20,6 +20,8 @@ interface Order {
     sku: string | null;
     product_id: number;
     variant_id: number;
+    vendor: string | null;
+    product_type: string | null;
   }>;
 }
 

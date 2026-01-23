@@ -33,6 +33,8 @@ interface Order {
     sku: string | null;
     product_id: number;
     variant_id: number;
+    vendor: string | null;
+    product_type: string | null;
   }>;
 }
 
@@ -45,6 +47,8 @@ interface ProductSummary {
   unitsSold: number;
   totalRevenue: number;
   currency: string;
+  vendor: string;
+  productType: string;
   imageUrl?: string;
 }
 
@@ -58,12 +62,12 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const [error, setError] = useState<string>('');
   const [sortedOrders, setSortedOrders] = useState<Order[]>([]);
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
-  const [sortColumn, setSortColumn] = useState<number>(2); // Default to Date column
+  const [sortColumn, setSortColumn] = useState<number>(3); // Default to Date column
   const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
 
   // Product summary states
   const [productSummary, setProductSummary] = useState<ProductSummary[]>([]);
-  const [productSortColumn, setProductSortColumn] = useState<number>(3); // Default to Units Sold
+  const [productSortColumn, setProductSortColumn] = useState<number>(6); // Default to Units Sold
   const [productSortDirection, setProductSortDirection] = useState<'ascending' | 'descending'>('descending');
 
   // Filter states for Polaris Filters component
@@ -227,31 +231,33 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
       let bValue: any;
 
       switch (columnIndex) {
-        case 0: // Order
+        case 0: // Row index (not sortable)
+          return 0;
+        case 1: // Order
           aValue = a.name;
           bValue = b.name;
           break;
-        case 1: // Customer
+        case 2: // Customer
           aValue = a.email || '';
           bValue = b.email || '';
           break;
-        case 2: // Date
+        case 3: // Date
           aValue = new Date(a.created_at).getTime();
           bValue = new Date(b.created_at).getTime();
           break;
-        case 3: // Total
+        case 4: // Total
           aValue = parseFloat(a.total_price);
           bValue = parseFloat(b.total_price);
           break;
-        case 4: // Status
+        case 5: // Status
           aValue = a.financial_status;
           bValue = b.financial_status;
           break;
-        case 5: // Items
+        case 6: // Items
           aValue = a.line_items.length;
           bValue = b.line_items.length;
           break;
-        case 6: // Total Units
+        case 7: // Total Units
           aValue = a.line_items.reduce((sum, item) => sum + item.quantity, 0);
           bValue = b.line_items.reduce((sum, item) => sum + item.quantity, 0);
           break;
@@ -318,6 +324,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             unitsSold: item.quantity,
             totalRevenue: parseFloat(item.price) * item.quantity,
             currency: order.currency,
+            vendor: item.vendor || '',
+            productType: item.product_type || '',
           });
         }
       });
@@ -437,7 +445,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     return `https://admin.shopify.com/store/${shopName}/orders/${order.id}`;
   };
 
-  const rows = sortedOrders.map((order) => [
+  const rows = sortedOrders.map((order, index) => [
+    index + 1,
     <Link url={getOrderLink(order)} target="_blank" removeUnderline>
       {order.name}
     </Link>,
@@ -456,23 +465,33 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     const direction = productSortDirection;
 
     switch (productSortColumn) {
-      case 0: // Product name
+      case 0: // Row index (not sortable)
+        return 0;
+      case 1: // Product name
         aValue = a.productName.toLowerCase();
         bValue = b.productName.toLowerCase();
         break;
-      case 1: // Variant name
+      case 2: // Product type
+        aValue = a.productType.toLowerCase();
+        bValue = b.productType.toLowerCase();
+        break;
+      case 3: // Vendor
+        aValue = a.vendor.toLowerCase();
+        bValue = b.vendor.toLowerCase();
+        break;
+      case 4: // Variant name
         aValue = a.variantName.toLowerCase();
         bValue = b.variantName.toLowerCase();
         break;
-      case 2: // SKU
+      case 5: // SKU
         aValue = a.sku.toLowerCase();
         bValue = b.sku.toLowerCase();
         break;
-      case 3: // Units sold
+      case 6: // Units sold
         aValue = a.unitsSold;
         bValue = b.unitsSold;
         break;
-      case 4: // Total revenue
+      case 7: // Total revenue
         aValue = a.totalRevenue;
         bValue = b.totalRevenue;
         break;
@@ -485,8 +504,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     return 0;
   });
 
-  const productRows = sortedProductSummary.map((product) => [
+  const productRows = sortedProductSummary.map((product, index) => [
+    index + 1,
     product.productName,
+    product.productType || 'N/A',
+    product.vendor || 'N/A',
     product.variantName || 'Default',
     product.sku || 'N/A',
     product.unitsSold,
@@ -500,20 +522,20 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   };
 
   const sortOptions = [
-    { label: 'Date (Newest first)', value: '2-descending' },
-    { label: 'Date (Oldest first)', value: '2-ascending' },
-    { label: 'Order (A-Z)', value: '0-ascending' },
-    { label: 'Order (Z-A)', value: '0-descending' },
-    { label: 'Customer (A-Z)', value: '1-ascending' },
-    { label: 'Customer (Z-A)', value: '1-descending' },
-    { label: 'Total (Low to High)', value: '3-ascending' },
-    { label: 'Total (High to Low)', value: '3-descending' },
-    { label: 'Status (A-Z)', value: '4-ascending' },
-    { label: 'Status (Z-A)', value: '4-descending' },
-    { label: 'Items (Fewest first)', value: '5-ascending' },
-    { label: 'Items (Most first)', value: '5-descending' },
-    { label: 'Total Units (Least first)', value: '6-ascending' },
-    { label: 'Total Units (Most first)', value: '6-descending' },
+    { label: 'Date (Newest first)', value: '3-descending' },
+    { label: 'Date (Oldest first)', value: '3-ascending' },
+    { label: 'Order (A-Z)', value: '1-ascending' },
+    { label: 'Order (Z-A)', value: '1-descending' },
+    { label: 'Customer (A-Z)', value: '2-ascending' },
+    { label: 'Customer (Z-A)', value: '2-descending' },
+    { label: 'Total (Low to High)', value: '4-ascending' },
+    { label: 'Total (High to Low)', value: '4-descending' },
+    { label: 'Status (A-Z)', value: '5-ascending' },
+    { label: 'Status (Z-A)', value: '5-descending' },
+    { label: 'Items (Fewest first)', value: '6-ascending' },
+    { label: 'Items (Most first)', value: '6-descending' },
+    { label: 'Total Units (Least first)', value: '7-ascending' },
+    { label: 'Total Units (Most first)', value: '7-descending' },
   ];
 
   const filters = [
@@ -853,8 +875,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
           <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
             <DataTable
-              columnContentTypes={['text', 'text', 'text', 'numeric', 'text', 'numeric', 'numeric']}
+              columnContentTypes={['numeric', 'text', 'text', 'text', 'numeric', 'text', 'numeric', 'numeric']}
               headings={[
+                '#',
                 'Order',
                 'Customer',
                 'Date',
@@ -883,16 +906,20 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                 label="Sort by"
                 labelInline
                 options={[
-                  { label: 'Units Sold (Most first)', value: '3-descending' },
-                  { label: 'Units Sold (Least first)', value: '3-ascending' },
-                  { label: 'Revenue (High to Low)', value: '4-descending' },
-                  { label: 'Revenue (Low to High)', value: '4-ascending' },
-                  { label: 'Product Name (A-Z)', value: '0-ascending' },
-                  { label: 'Product Name (Z-A)', value: '0-descending' },
-                  { label: 'Variant (A-Z)', value: '1-ascending' },
-                  { label: 'Variant (Z-A)', value: '1-descending' },
-                  { label: 'SKU (A-Z)', value: '2-ascending' },
-                  { label: 'SKU (Z-A)', value: '2-descending' },
+                  { label: 'Units Sold (Most first)', value: '6-descending' },
+                  { label: 'Units Sold (Least first)', value: '6-ascending' },
+                  { label: 'Revenue (High to Low)', value: '7-descending' },
+                  { label: 'Revenue (Low to High)', value: '7-ascending' },
+                  { label: 'Product Name (A-Z)', value: '1-ascending' },
+                  { label: 'Product Name (Z-A)', value: '1-descending' },
+                  { label: 'Type (A-Z)', value: '2-ascending' },
+                  { label: 'Type (Z-A)', value: '2-descending' },
+                  { label: 'Vendor (A-Z)', value: '3-ascending' },
+                  { label: 'Vendor (Z-A)', value: '3-descending' },
+                  { label: 'Variant (A-Z)', value: '4-ascending' },
+                  { label: 'Variant (Z-A)', value: '4-descending' },
+                  { label: 'SKU (A-Z)', value: '5-ascending' },
+                  { label: 'SKU (Z-A)', value: '5-descending' },
                 ]}
                 value={`${productSortColumn}-${productSortDirection}`}
                 onChange={handleProductSortChange}
@@ -901,9 +928,12 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
             <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
               <DataTable
-                columnContentTypes={['text', 'text', 'text', 'numeric', 'numeric']}
+                columnContentTypes={['numeric', 'text', 'text', 'text', 'text', 'text', 'numeric', 'numeric']}
                 headings={[
+                  '#',
                   'Product Name',
+                  'Type',
+                  'Vendor',
                   'Variant',
                   'SKU',
                   'Units Sold',
