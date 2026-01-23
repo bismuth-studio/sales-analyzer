@@ -63,7 +63,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
   // Product summary states
   const [productSummary, setProductSummary] = useState<ProductSummary[]>([]);
-  const [productImages, setProductImages] = useState<{ [key: number]: string }>({});
   const [productSortColumn, setProductSortColumn] = useState<number>(3); // Default to Units Sold
   const [productSortDirection, setProductSortDirection] = useState<'ascending' | 'descending'>('descending');
 
@@ -296,25 +295,14 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const generateProductSummary = useCallback(() => {
     const productMap = new Map<string, ProductSummary>();
 
-    console.log('Processing orders for product summary:', filteredOrders.length);
-
-    filteredOrders.forEach((order, orderIndex) => {
-      console.log(`Order ${orderIndex + 1} has ${order.line_items?.length || 0} line items`);
-
+    filteredOrders.forEach((order) => {
       if (!order.line_items || order.line_items.length === 0) {
-        console.log(`Order ${orderIndex + 1} has no line items!`);
         return;
       }
 
-      order.line_items.forEach((item, itemIndex) => {
-        console.log(`  Item ${itemIndex + 1}:`, {
-          product_id: item.product_id,
-          variant_id: item.variant_id,
-          title: item.title,
-          quantity: item.quantity
-        });
-
-        const key = `${item.product_id}-${item.variant_id}`;
+      order.line_items.forEach((item) => {
+        // Use title as the unique key since product_id might be null
+        const key = item.title;
 
         if (productMap.has(key)) {
           const existing = productMap.get(key)!;
@@ -336,39 +324,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     });
 
     const summary = Array.from(productMap.values());
-    console.log('Total unique products found:', summary.length);
-    console.log('Product summary:', summary);
     setProductSummary(summary);
-
-    // Fetch product images
-    const productIds = [...new Set(summary.map(p => p.productId))];
-    if (productIds.length > 0) {
-      fetchProductImages(productIds);
-    }
   }, [filteredOrders]);
-
-  // Fetch product images
-  const fetchProductImages = async (productIds: number[]) => {
-    try {
-      const response = await fetch(
-        `/api/orders/product-images?shop=${encodeURIComponent(shop)}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ productIds }),
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setProductImages(data.productImages || {});
-      }
-    } catch (error) {
-      console.error('Error fetching product images:', error);
-    }
-  };
 
   // Update product summary when filtered orders change
   useEffect(() => {
@@ -499,25 +456,23 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     const direction = productSortDirection;
 
     switch (productSortColumn) {
-      case 0: // Image (no sort)
-        return 0;
-      case 1: // Product name
+      case 0: // Product name
         aValue = a.productName.toLowerCase();
         bValue = b.productName.toLowerCase();
         break;
-      case 2: // Variant name
+      case 1: // Variant name
         aValue = a.variantName.toLowerCase();
         bValue = b.variantName.toLowerCase();
         break;
-      case 3: // SKU
+      case 2: // SKU
         aValue = a.sku.toLowerCase();
         bValue = b.sku.toLowerCase();
         break;
-      case 4: // Units sold
+      case 3: // Units sold
         aValue = a.unitsSold;
         bValue = b.unitsSold;
         break;
-      case 5: // Total revenue
+      case 4: // Total revenue
         aValue = a.totalRevenue;
         bValue = b.totalRevenue;
         break;
@@ -531,15 +486,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   });
 
   const productRows = sortedProductSummary.map((product) => [
-    productImages[product.productId] ? (
-      <img
-        src={productImages[product.productId]}
-        alt={product.productName}
-        style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px' }}
-      />
-    ) : (
-      <div style={{ width: '50px', height: '50px', backgroundColor: '#f0f0f0', borderRadius: '4px' }} />
-    ),
     product.productName,
     product.variantName || 'Default',
     product.sku || 'N/A',
@@ -860,6 +806,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     <>
       <Card>
         <BlockStack gap="400">
+          <Text as="h2" variant="headingMd">
+            Orders
+          </Text>
           <InlineStack align="space-between" blockAlign="center">
             <Text as="p" variant="bodyMd" fontWeight="semibold">
               Your Last 50 Sales ({sortedOrders.length} of {orders.length} orders)
@@ -923,24 +872,27 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
       {productSummary.length > 0 && (
         <Card>
           <BlockStack gap="400">
+            <Text as="h2" variant="headingMd">
+              Product Summary
+            </Text>
             <InlineStack align="space-between" blockAlign="center">
               <Text as="p" variant="bodyMd" fontWeight="semibold">
-                Product Summary ({productSummary.length} products from {sortedOrders.length} orders)
+                {productSummary.length} products from {sortedOrders.length} orders
               </Text>
               <Select
                 label="Sort by"
                 labelInline
                 options={[
-                  { label: 'Units Sold (Most first)', value: '4-descending' },
-                  { label: 'Units Sold (Least first)', value: '4-ascending' },
-                  { label: 'Revenue (High to Low)', value: '5-descending' },
-                  { label: 'Revenue (Low to High)', value: '5-ascending' },
-                  { label: 'Product Name (A-Z)', value: '1-ascending' },
-                  { label: 'Product Name (Z-A)', value: '1-descending' },
-                  { label: 'Variant (A-Z)', value: '2-ascending' },
-                  { label: 'Variant (Z-A)', value: '2-descending' },
-                  { label: 'SKU (A-Z)', value: '3-ascending' },
-                  { label: 'SKU (Z-A)', value: '3-descending' },
+                  { label: 'Units Sold (Most first)', value: '3-descending' },
+                  { label: 'Units Sold (Least first)', value: '3-ascending' },
+                  { label: 'Revenue (High to Low)', value: '4-descending' },
+                  { label: 'Revenue (Low to High)', value: '4-ascending' },
+                  { label: 'Product Name (A-Z)', value: '0-ascending' },
+                  { label: 'Product Name (Z-A)', value: '0-descending' },
+                  { label: 'Variant (A-Z)', value: '1-ascending' },
+                  { label: 'Variant (Z-A)', value: '1-descending' },
+                  { label: 'SKU (A-Z)', value: '2-ascending' },
+                  { label: 'SKU (Z-A)', value: '2-descending' },
                 ]}
                 value={`${productSortColumn}-${productSortDirection}`}
                 onChange={handleProductSortChange}
@@ -949,9 +901,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
             <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
               <DataTable
-                columnContentTypes={['text', 'text', 'text', 'text', 'numeric', 'numeric']}
+                columnContentTypes={['text', 'text', 'text', 'numeric', 'numeric']}
                 headings={[
-                  'Image',
                   'Product Name',
                   'Variant',
                   'SKU',
