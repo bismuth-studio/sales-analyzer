@@ -14,7 +14,6 @@ import {
   Filters,
   ChoiceList,
   TextField,
-  Button,
 } from '@shopify/polaris';
 
 interface Order {
@@ -26,10 +25,27 @@ interface Order {
   currency: string;
   financial_status: string;
   line_items: Array<{
+    id: number;
     title: string;
     quantity: number;
     price: string;
+    variant_title: string | null;
+    sku: string | null;
+    product_id: number;
+    variant_id: number;
   }>;
+}
+
+interface ProductSummary {
+  productId: number;
+  variantId: number;
+  productName: string;
+  variantName: string;
+  sku: string;
+  unitsSold: number;
+  totalRevenue: number;
+  currency: string;
+  imageUrl?: string;
 }
 
 interface OrdersListProps {
@@ -44,6 +60,12 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [sortColumn, setSortColumn] = useState<number>(2); // Default to Date column
   const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
+
+  // Product summary states
+  const [productSummary, setProductSummary] = useState<ProductSummary[]>([]);
+  const [productImages, setProductImages] = useState<{ [key: number]: string }>({});
+  const [productSortColumn, setProductSortColumn] = useState<number>(3); // Default to Units Sold
+  const [productSortDirection, setProductSortDirection] = useState<'ascending' | 'descending'>('descending');
 
   // Filter states for Polaris Filters component
   const [queryValue, setQueryValue] = useState<string>('');
@@ -230,6 +252,10 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
           aValue = a.line_items.length;
           bValue = b.line_items.length;
           break;
+        case 6: // Total Units
+          aValue = a.line_items.reduce((sum, item) => sum + item.quantity, 0);
+          bValue = b.line_items.reduce((sum, item) => sum + item.quantity, 0);
+          break;
         default:
           return 0;
       }
@@ -265,6 +291,89 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     setStartTime('');
     setEndTime('');
   }, []);
+
+  // Generate product summary from filtered orders
+  const generateProductSummary = useCallback(() => {
+    const productMap = new Map<string, ProductSummary>();
+
+    console.log('Processing orders for product summary:', filteredOrders.length);
+
+    filteredOrders.forEach((order, orderIndex) => {
+      console.log(`Order ${orderIndex + 1} has ${order.line_items?.length || 0} line items`);
+
+      if (!order.line_items || order.line_items.length === 0) {
+        console.log(`Order ${orderIndex + 1} has no line items!`);
+        return;
+      }
+
+      order.line_items.forEach((item, itemIndex) => {
+        console.log(`  Item ${itemIndex + 1}:`, {
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          title: item.title,
+          quantity: item.quantity
+        });
+
+        const key = `${item.product_id}-${item.variant_id}`;
+
+        if (productMap.has(key)) {
+          const existing = productMap.get(key)!;
+          existing.unitsSold += item.quantity;
+          existing.totalRevenue += parseFloat(item.price) * item.quantity;
+        } else {
+          productMap.set(key, {
+            productId: item.product_id,
+            variantId: item.variant_id,
+            productName: item.title,
+            variantName: item.variant_title || '',
+            sku: item.sku || '',
+            unitsSold: item.quantity,
+            totalRevenue: parseFloat(item.price) * item.quantity,
+            currency: order.currency,
+          });
+        }
+      });
+    });
+
+    const summary = Array.from(productMap.values());
+    console.log('Total unique products found:', summary.length);
+    console.log('Product summary:', summary);
+    setProductSummary(summary);
+
+    // Fetch product images
+    const productIds = [...new Set(summary.map(p => p.productId))];
+    if (productIds.length > 0) {
+      fetchProductImages(productIds);
+    }
+  }, [filteredOrders]);
+
+  // Fetch product images
+  const fetchProductImages = async (productIds: number[]) => {
+    try {
+      const response = await fetch(
+        `/api/orders/product-images?shop=${encodeURIComponent(shop)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ productIds }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setProductImages(data.productImages || {});
+      }
+    } catch (error) {
+      console.error('Error fetching product images:', error);
+    }
+  };
+
+  // Update product summary when filtered orders change
+  useEffect(() => {
+    generateProductSummary();
+  }, [generateProductSummary]);
 
   const fetchOrders = async () => {
     try {
@@ -380,7 +489,69 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     parseFloat(order.total_price).toFixed(2),
     getStatusBadge(order.financial_status),
     order.line_items.length,
+    order.line_items.reduce((sum, item) => sum + item.quantity, 0),
   ]);
+
+  // Sort product summary
+  const sortedProductSummary = [...productSummary].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+    const direction = productSortDirection;
+
+    switch (productSortColumn) {
+      case 0: // Image (no sort)
+        return 0;
+      case 1: // Product name
+        aValue = a.productName.toLowerCase();
+        bValue = b.productName.toLowerCase();
+        break;
+      case 2: // Variant name
+        aValue = a.variantName.toLowerCase();
+        bValue = b.variantName.toLowerCase();
+        break;
+      case 3: // SKU
+        aValue = a.sku.toLowerCase();
+        bValue = b.sku.toLowerCase();
+        break;
+      case 4: // Units sold
+        aValue = a.unitsSold;
+        bValue = b.unitsSold;
+        break;
+      case 5: // Total revenue
+        aValue = a.totalRevenue;
+        bValue = b.totalRevenue;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+    return 0;
+  });
+
+  const productRows = sortedProductSummary.map((product) => [
+    productImages[product.productId] ? (
+      <img
+        src={productImages[product.productId]}
+        alt={product.productName}
+        style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px' }}
+      />
+    ) : (
+      <div style={{ width: '50px', height: '50px', backgroundColor: '#f0f0f0', borderRadius: '4px' }} />
+    ),
+    product.productName,
+    product.variantName || 'Default',
+    product.sku || 'N/A',
+    product.unitsSold,
+    `${product.currency} ${product.totalRevenue.toFixed(2)}`,
+  ]);
+
+  const handleProductSortChange = (value: string) => {
+    const [columnStr, direction] = value.split('-');
+    setProductSortColumn(parseInt(columnStr));
+    setProductSortDirection(direction as 'ascending' | 'descending');
+  };
 
   const sortOptions = [
     { label: 'Date (Newest first)', value: '2-descending' },
@@ -395,6 +566,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     { label: 'Status (Z-A)', value: '4-descending' },
     { label: 'Items (Fewest first)', value: '5-ascending' },
     { label: 'Items (Most first)', value: '5-descending' },
+    { label: 'Total Units (Least first)', value: '6-ascending' },
+    { label: 'Total Units (Most first)', value: '6-descending' },
   ];
 
   const filters = [
@@ -684,66 +857,114 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   }
 
   return (
-    <Card>
-      <BlockStack gap="400">
-        <InlineStack align="space-between" blockAlign="center">
-          <Text as="p" variant="bodyMd" fontWeight="semibold">
-            Your Last 50 Sales ({sortedOrders.length} of {orders.length} orders)
-          </Text>
-          <Select
-            label="Sort by"
-            labelInline
-            options={sortOptions}
-            value={`${sortColumn}-${sortDirection}`}
-            onChange={handleSortChange}
-          />
-        </InlineStack>
-
-        <Filters
-          queryValue={queryValue}
-          filters={filters}
-          appliedFilters={appliedFilters}
-          onQueryChange={setQueryValue}
-          onQueryClear={handleQueryValueRemove}
-          onClearAll={handleFiltersClearAll}
-          queryPlaceholder="Search by order number or customer email"
-        />
-
-        {dateRange.includes('custom') && (
-          <InlineStack gap="200">
-            <TextField
-              label="Start date"
-              type="date"
-              value={startDate}
-              onChange={setStartDate}
-              autoComplete="off"
-            />
-            <TextField
-              label="End date"
-              type="date"
-              value={endDate}
-              onChange={setEndDate}
-              autoComplete="off"
+    <>
+      <Card>
+        <BlockStack gap="400">
+          <InlineStack align="space-between" blockAlign="center">
+            <Text as="p" variant="bodyMd" fontWeight="semibold">
+              Your Last 50 Sales ({sortedOrders.length} of {orders.length} orders)
+            </Text>
+            <Select
+              label="Sort by"
+              labelInline
+              options={sortOptions}
+              value={`${sortColumn}-${sortDirection}`}
+              onChange={handleSortChange}
             />
           </InlineStack>
-        )}
 
-        <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
-          <DataTable
-            columnContentTypes={['text', 'text', 'text', 'numeric', 'text', 'numeric']}
-            headings={[
-              'Order',
-              'Customer',
-              'Date',
-              'Total',
-              'Status',
-              'Items',
-            ]}
-            rows={rows}
+          <Filters
+            queryValue={queryValue}
+            filters={filters}
+            appliedFilters={appliedFilters}
+            onQueryChange={setQueryValue}
+            onQueryClear={handleQueryValueRemove}
+            onClearAll={handleFiltersClearAll}
+            queryPlaceholder="Search by order number or customer email"
           />
-        </div>
-      </BlockStack>
-    </Card>
+
+          {dateRange.includes('custom') && (
+            <InlineStack gap="200">
+              <TextField
+                label="Start date"
+                type="date"
+                value={startDate}
+                onChange={setStartDate}
+                autoComplete="off"
+              />
+              <TextField
+                label="End date"
+                type="date"
+                value={endDate}
+                onChange={setEndDate}
+                autoComplete="off"
+              />
+            </InlineStack>
+          )}
+
+          <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+            <DataTable
+              columnContentTypes={['text', 'text', 'text', 'numeric', 'text', 'numeric', 'numeric']}
+              headings={[
+                'Order',
+                'Customer',
+                'Date',
+                'Total',
+                'Status',
+                'Items',
+                'Total Units',
+              ]}
+              rows={rows}
+            />
+          </div>
+        </BlockStack>
+      </Card>
+
+      {productSummary.length > 0 && (
+        <Card>
+          <BlockStack gap="400">
+            <InlineStack align="space-between" blockAlign="center">
+              <Text as="p" variant="bodyMd" fontWeight="semibold">
+                Product Summary ({productSummary.length} products from {sortedOrders.length} orders)
+              </Text>
+              <Select
+                label="Sort by"
+                labelInline
+                options={[
+                  { label: 'Units Sold (Most first)', value: '4-descending' },
+                  { label: 'Units Sold (Least first)', value: '4-ascending' },
+                  { label: 'Revenue (High to Low)', value: '5-descending' },
+                  { label: 'Revenue (Low to High)', value: '5-ascending' },
+                  { label: 'Product Name (A-Z)', value: '1-ascending' },
+                  { label: 'Product Name (Z-A)', value: '1-descending' },
+                  { label: 'Variant (A-Z)', value: '2-ascending' },
+                  { label: 'Variant (Z-A)', value: '2-descending' },
+                  { label: 'SKU (A-Z)', value: '3-ascending' },
+                  { label: 'SKU (Z-A)', value: '3-descending' },
+                ]}
+                value={`${productSortColumn}-${productSortDirection}`}
+                onChange={handleProductSortChange}
+              />
+            </InlineStack>
+
+            <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+              <DataTable
+                columnContentTypes={['text', 'text', 'text', 'text', 'numeric', 'numeric']}
+                headings={[
+                  'Image',
+                  'Product Name',
+                  'Variant',
+                  'SKU',
+                  'Units Sold',
+                  'Total Revenue',
+                ]}
+                rows={productRows}
+              />
+            </div>
+          </BlockStack>
+        </Card>
+      )}
+    </>
   );
 };
 

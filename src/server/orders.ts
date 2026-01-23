@@ -12,9 +12,14 @@ interface Order {
   currency: string;
   financial_status: string;
   line_items: Array<{
+    id: number;
     title: string;
     quantity: number;
     price: string;
+    variant_title: string | null;
+    sku: string | null;
+    product_id: number;
+    variant_id: number;
   }>;
 }
 
@@ -36,17 +41,21 @@ router.get('/recent', async (req: Request, res: Response) => {
     // Create a REST client for this session
     const client = new shopify.clients.Rest({ session });
 
-    // Fetch last 50 orders
+    // Fetch last 50 orders with detailed line items
     const response = await client.get({
       path: 'orders',
       query: {
         limit: '50',
         status: 'any',
-        fields: 'id,name,email,created_at,total_price,currency,financial_status,line_items',
       },
     });
 
     const orders = (response.body as any).orders as Order[];
+
+    // Debug: Log first order's line items to see what Shopify returns
+    if (orders.length > 0 && orders[0].line_items && orders[0].line_items.length > 0) {
+      console.log('Sample line item from Shopify API:', JSON.stringify(orders[0].line_items[0], null, 2));
+    }
 
     res.json({
       success: true,
@@ -57,6 +66,64 @@ router.get('/recent', async (req: Request, res: Response) => {
     console.error('Error fetching orders:', error);
     res.status(500).json({
       error: 'Failed to fetch orders',
+      message: error.message,
+    });
+  }
+});
+
+// Get product images for multiple product IDs
+router.post('/product-images', async (req: Request, res: Response) => {
+  try {
+    const shop = req.query.shop as string;
+    const { productIds } = req.body;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    if (!productIds || !Array.isArray(productIds)) {
+      return res.status(400).json({ error: 'Missing or invalid productIds' });
+    }
+
+    const session = getSession(shop);
+
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const client = new shopify.clients.Rest({ session });
+    const productImages: { [key: number]: string } = {};
+
+    // Fetch product details in batches
+    const uniqueProductIds = [...new Set(productIds)];
+
+    for (const productId of uniqueProductIds) {
+      try {
+        const response = await client.get({
+          path: `products/${productId}`,
+          query: {
+            fields: 'id,image',
+          },
+        });
+
+        const product = (response.body as any).product;
+        if (product && product.image && product.image.src) {
+          productImages[productId] = product.image.src;
+        }
+      } catch (error) {
+        console.error(`Error fetching product ${productId}:`, error);
+        // Continue with other products even if one fails
+      }
+    }
+
+    res.json({
+      success: true,
+      productImages,
+    });
+  } catch (error: any) {
+    console.error('Error fetching product images:', error);
+    res.status(500).json({
+      error: 'Failed to fetch product images',
       message: error.message,
     });
   }
