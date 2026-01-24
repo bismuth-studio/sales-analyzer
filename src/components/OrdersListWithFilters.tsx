@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card,
-  DataTable,
+  IndexTable,
   Badge,
   Spinner,
   Banner,
@@ -9,7 +9,6 @@ import {
   EmptyState,
   BlockStack,
   InlineStack,
-  Select,
   Link,
   Filters,
   ChoiceList,
@@ -275,12 +274,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     setSortedOrders(sorted);
   };
 
-  const handleSortChange = (value: string) => {
-    const [columnStr, direction] = value.split('-');
-    const columnIndex = parseInt(columnStr);
-    setSortColumn(columnIndex);
-    setSortDirection(direction as 'ascending' | 'descending');
-    applySorting(columnIndex, direction as 'ascending' | 'descending');
+  // Handle sort for Orders table (IndexTable)
+  const handleOrderSort = (index: number, direction: 'ascending' | 'descending') => {
+    setSortColumn(index);
+    setSortDirection(direction);
+    applySorting(index, direction);
   };
 
   const handleQueryValueRemove = useCallback(() => setQueryValue(''), []);
@@ -473,18 +471,17 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     return `https://admin.shopify.com/store/${shopName}/orders/${order.id}`;
   };
 
-  const rows = sortedOrders.map((order, index) => [
-    index + 1,
-    <Link url={getOrderLink(order)} target="_blank" removeUnderline>
-      {order.name}
-    </Link>,
-    order.email || 'N/A',
-    formatDate(order.created_at),
-    parseFloat(order.total_price).toFixed(2),
-    getStatusBadge(order.financial_status),
-    order.line_items.length,
-    order.line_items.reduce((sum, item) => sum + item.quantity, 0),
-  ]);
+  // Column headings for Orders table
+  const orderHeadings = [
+    { title: '#' },
+    { title: 'Order' },
+    { title: 'Customer' },
+    { title: 'Date' },
+    { title: 'Total' },
+    { title: 'Status' },
+    { title: 'Items' },
+    { title: 'Total Units' },
+  ];
 
   // Sort product summary
   const sortedProductSummary = [...productSummary].sort((a, b) => {
@@ -540,41 +537,25 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     return 0;
   });
 
-  const productRows = sortedProductSummary.map((product, index) => [
-    index + 1,
-    product.productName,
-    product.color || 'N/A',
-    product.size || 'N/A',
-    product.sku || 'N/A',
-    product.unitsSold,
-    product.remainingInventory,
-    `${product.sellThroughRate.toFixed(1)}%`,
-    `${product.currency} ${product.totalRevenue.toFixed(2)}`,
-    `${product.revenuePercentage.toFixed(1)}%`,
-  ]);
-
-  const handleProductSortChange = (value: string) => {
-    const [columnStr, direction] = value.split('-');
-    setProductSortColumn(parseInt(columnStr));
-    setProductSortDirection(direction as 'ascending' | 'descending');
-  };
-
-  const sortOptions = [
-    { label: 'Date (Newest first)', value: '3-descending' },
-    { label: 'Date (Oldest first)', value: '3-ascending' },
-    { label: 'Order (A-Z)', value: '1-ascending' },
-    { label: 'Order (Z-A)', value: '1-descending' },
-    { label: 'Customer (A-Z)', value: '2-ascending' },
-    { label: 'Customer (Z-A)', value: '2-descending' },
-    { label: 'Total (Low to High)', value: '4-ascending' },
-    { label: 'Total (High to Low)', value: '4-descending' },
-    { label: 'Status (A-Z)', value: '5-ascending' },
-    { label: 'Status (Z-A)', value: '5-descending' },
-    { label: 'Items (Fewest first)', value: '6-ascending' },
-    { label: 'Items (Most first)', value: '6-descending' },
-    { label: 'Total Units (Least first)', value: '7-ascending' },
-    { label: 'Total Units (Most first)', value: '7-descending' },
+  // Column headings for Product Summary table
+  const productHeadings = [
+    { title: '#' },
+    { title: 'Product Name' },
+    { title: 'Color' },
+    { title: 'Size' },
+    { title: 'SKU' },
+    { title: 'Units Sold' },
+    { title: 'Remaining Inventory' },
+    { title: 'Sell-Through Rate' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
   ];
+
+  // Handle sort for Product Summary table (IndexTable)
+  const handleProductSort = (index: number, direction: 'ascending' | 'descending') => {
+    setProductSortColumn(index);
+    setProductSortDirection(direction);
+  };
 
   const filters = [
     {
@@ -828,18 +809,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
           <Text as="h2" variant="headingMd">
             Orders
           </Text>
-          <InlineStack align="space-between" blockAlign="center">
-            <Text as="p" variant="bodyMd" fontWeight="semibold">
-              Your Last 50 Sales ({sortedOrders.length} of {orders.length} orders)
-            </Text>
-            <Select
-              label="Sort by"
-              labelInline
-              options={sortOptions}
-              value={`${sortColumn}-${sortDirection}`}
-              onChange={handleSortChange}
-            />
-          </InlineStack>
+          <Text as="p" variant="bodyMd" fontWeight="semibold">
+            Your Last 50 Sales ({sortedOrders.length} of {orders.length} orders)
+          </Text>
 
           <Filters
             queryValue={queryValue}
@@ -870,21 +842,37 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             </InlineStack>
           )}
 
-          <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
-            <DataTable
-              columnContentTypes={['numeric', 'text', 'text', 'text', 'numeric', 'text', 'numeric', 'numeric']}
-              headings={[
-                '#',
-                'Order',
-                'Customer',
-                'Date',
-                'Total',
-                'Status',
-                'Items',
-                'Total Units',
-              ]}
-              rows={rows}
-            />
+          <div style={{ height: '600px', overflow: 'auto' }}>
+            <IndexTable
+              resourceName={{ singular: 'order', plural: 'orders' }}
+              itemCount={sortedOrders.length}
+              headings={orderHeadings}
+              selectable={false}
+              sortable={[false, true, true, true, true, true, true, true]}
+              defaultSortDirection="descending"
+              sortDirection={sortDirection}
+              sortColumnIndex={sortColumn}
+              onSort={handleOrderSort}
+            >
+              {sortedOrders.map((order, index) => (
+                <IndexTable.Row id={order.id.toString()} key={order.id} position={index}>
+                  <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    <Link url={getOrderLink(order)} target="_blank" removeUnderline>
+                      {order.name}
+                    </Link>
+                  </IndexTable.Cell>
+                  <IndexTable.Cell>{order.email || 'N/A'}</IndexTable.Cell>
+                  <IndexTable.Cell>{formatDate(order.created_at)}</IndexTable.Cell>
+                  <IndexTable.Cell>{parseFloat(order.total_price).toFixed(2)}</IndexTable.Cell>
+                  <IndexTable.Cell>{getStatusBadge(order.financial_status)}</IndexTable.Cell>
+                  <IndexTable.Cell>{order.line_items.length}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    {order.line_items.reduce((sum, item) => sum + item.quantity, 0)}
+                  </IndexTable.Cell>
+                </IndexTable.Row>
+              ))}
+            </IndexTable>
           </div>
         </BlockStack>
       </Card>
@@ -895,55 +883,43 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             <Text as="h2" variant="headingMd">
               Product Summary
             </Text>
-            <InlineStack align="space-between" blockAlign="center">
-              <Text as="p" variant="bodyMd" fontWeight="semibold">
-                {productSummary.length} products from {sortedOrders.length} orders
-              </Text>
-              <Select
-                label="Sort by"
-                labelInline
-                options={[
-                  { label: 'Units Sold (Most first)', value: '5-descending' },
-                  { label: 'Units Sold (Least first)', value: '5-ascending' },
-                  { label: 'Remaining Inventory (Most first)', value: '6-descending' },
-                  { label: 'Remaining Inventory (Least first)', value: '6-ascending' },
-                  { label: 'Sell-Through Rate (High to Low)', value: '7-descending' },
-                  { label: 'Sell-Through Rate (Low to High)', value: '7-ascending' },
-                  { label: 'Revenue (High to Low)', value: '8-descending' },
-                  { label: 'Revenue (Low to High)', value: '8-ascending' },
-                  { label: 'Revenue % (High to Low)', value: '9-descending' },
-                  { label: 'Revenue % (Low to High)', value: '9-ascending' },
-                  { label: 'Product Name (A-Z)', value: '1-ascending' },
-                  { label: 'Product Name (Z-A)', value: '1-descending' },
-                  { label: 'Color (A-Z)', value: '2-ascending' },
-                  { label: 'Color (Z-A)', value: '2-descending' },
-                  { label: 'Size (A-Z)', value: '3-ascending' },
-                  { label: 'Size (Z-A)', value: '3-descending' },
-                  { label: 'SKU (A-Z)', value: '4-ascending' },
-                  { label: 'SKU (Z-A)', value: '4-descending' },
-                ]}
-                value={`${productSortColumn}-${productSortDirection}`}
-                onChange={handleProductSortChange}
-              />
-            </InlineStack>
+            <Text as="p" variant="bodyMd" fontWeight="semibold">
+              {productSummary.length} products from {sortedOrders.length} orders
+            </Text>
 
-            <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
-              <DataTable
-                columnContentTypes={['numeric', 'text', 'text', 'text', 'text', 'numeric', 'numeric', 'text', 'numeric', 'text']}
-                headings={[
-                  '#',
-                  'Product Name',
-                  'Color',
-                  'Size',
-                  'SKU',
-                  'Units Sold',
-                  'Remaining Inventory',
-                  'Sell-Through Rate',
-                  'Total Revenue',
-                  'Revenue %',
-                ]}
-                rows={productRows}
-              />
+            <div style={{ height: '600px', overflow: 'auto' }}>
+              <IndexTable
+                resourceName={{ singular: 'product', plural: 'products' }}
+                itemCount={sortedProductSummary.length}
+                headings={productHeadings}
+                selectable={false}
+                sortable={[false, true, true, true, true, true, true, true, true, true]}
+                defaultSortDirection="descending"
+                sortDirection={productSortDirection}
+                sortColumnIndex={productSortColumn}
+                onSort={handleProductSort}
+              >
+                {sortedProductSummary.map((product, index) => (
+                  <IndexTable.Row
+                    id={`${product.productId}-${product.variantId}`}
+                    key={`${product.productId}-${product.variantId}`}
+                    position={index}
+                  >
+                    <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                    <IndexTable.Cell>{product.productName}</IndexTable.Cell>
+                    <IndexTable.Cell>{product.color || 'N/A'}</IndexTable.Cell>
+                    <IndexTable.Cell>{product.size || 'N/A'}</IndexTable.Cell>
+                    <IndexTable.Cell>{product.sku || 'N/A'}</IndexTable.Cell>
+                    <IndexTable.Cell>{product.unitsSold}</IndexTable.Cell>
+                    <IndexTable.Cell>{product.remainingInventory}</IndexTable.Cell>
+                    <IndexTable.Cell>{product.sellThroughRate.toFixed(1)}%</IndexTable.Cell>
+                    <IndexTable.Cell>
+                      {product.currency} {product.totalRevenue.toFixed(2)}
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>{product.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
+                  </IndexTable.Row>
+                ))}
+              </IndexTable>
             </div>
           </BlockStack>
         </Card>
