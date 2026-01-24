@@ -104,3 +104,17 @@ Make sure:
 - **Session expires**: If you leave the app idle for too long, you may need to re-authenticate by visiting the auth URL again
 - **Multiple terminals**: Use separate terminal windows/tabs for `npm run dev` and `ngrok` so you can see both outputs
 - **Check server logs**: The dev server logs show useful info about requests, errors, and authentication events
+
+## Quick Reference URLs
+
+Replace `[NGROK_URL]` with your current ngrok URL (e.g., `https://suzann-languishing-uncoloredly.ngrok-free.dev`)
+
+| Purpose | URL |
+|---------|-----|
+| Re-authenticate (after server restart) | `https://[NGROK_URL]/api/shopify/auth?shop=bismuth-dev.myshopify.com` |
+| Debug with console logs (outside iframe) | `http://localhost:3001?shop=bismuth-dev.myshopify.com` |
+| App in Shopify Admin | `https://admin.shopify.com/store/bismuth-dev/apps/drop-leak-v2` |
+| Express server | `http://localhost:3000` |
+| Vite dev server | `http://localhost:3001` |
+
+**Note:** When viewing the app inside Shopify Admin (iframe), browser console logs aren't visible. Use the localhost:3001 URL directly for debugging.

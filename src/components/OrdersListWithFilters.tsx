@@ -938,20 +938,20 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                     <IndexTable.Cell>{index + 1}</IndexTable.Cell>
                     <IndexTable.Cell>
                       {product.imageUrl ? (
-                        <img 
-                          src={product.imageUrl} 
+                        <img
+                          src={product.imageUrl}
                           alt={product.productName}
-                          style={{ 
-                            width: '50px', 
-                            height: '50px', 
+                          style={{
+                            width: '80px',
+                            height: '80px',
                             objectFit: 'cover',
                             borderRadius: '4px'
                           }}
                         />
                       ) : (
                         <div style={{
-                          width: '50px',
-                          height: '50px',
+                          width: '80px',
+                          height: '80px',
                           backgroundColor: '#f0f0f0',
                           borderRadius: '4px',
                           display: 'flex',
