@@ -87,6 +87,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const [startTime, setStartTime] = useState<string>('');
   const [endTime, setEndTime] = useState<string>('');
 
+  // Product images state
+  const [productImages, setProductImages] = useState<{ [key: number]: string }>({});
+
   useEffect(() => {
     if (!shop) {
       setLoading(false);
@@ -344,6 +347,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             currency: order.currency,
             sellThroughRate: sellThroughRate,
             revenuePercentage: 0, // Will be calculated below
+            imageUrl: undefined,
           });
         }
       });
@@ -356,6 +360,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     // Update revenue percentage for each product
     summary.forEach(product => {
       product.revenuePercentage = totalRevenue > 0 ? (product.totalRevenue / totalRevenue) * 100 : 0;
+      // Add image URL if it exists
+      product.imageUrl = productImages[product.productId];
     });
 
     setProductSummary(summary);
@@ -365,6 +371,28 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   useEffect(() => {
     generateProductSummary();
   }, [generateProductSummary]);
+
+  // Fetch product images only once when productSummary first has data
+  useEffect(() => {
+    if (productSummary.length > 0 && shop && Object.keys(productImages).length === 0) {
+      const productIds = [...new Set(productSummary.map(p => p.productId))];
+      
+      fetch(`/api/orders/product-images?shop=${encodeURIComponent(shop)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ productIds }),
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            setProductImages(data.productImages);
+          }
+        })
+        .catch(error => console.error('Error fetching product images:', error));
+    }
+  }, [productSummary, shop, productImages]);
 
   const fetchOrders = async () => {
     try {
@@ -492,39 +520,41 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     switch (productSortColumn) {
       case 0: // Row index (not sortable)
         return 0;
-      case 1: // Product name
+      case 1: // Image (not sortable)
+        return 0;
+      case 2: // Product name
         aValue = a.productName.toLowerCase();
         bValue = b.productName.toLowerCase();
         break;
-      case 2: // Color
+      case 3: // Color
         aValue = a.color.toLowerCase();
         bValue = b.color.toLowerCase();
         break;
-      case 3: // Size
+      case 4: // Size
         aValue = a.size.toLowerCase();
         bValue = b.size.toLowerCase();
         break;
-      case 4: // SKU
+      case 5: // SKU
         aValue = a.sku.toLowerCase();
         bValue = b.sku.toLowerCase();
         break;
-      case 5: // Units sold
+      case 6: // Units sold
         aValue = a.unitsSold;
         bValue = b.unitsSold;
         break;
-      case 6: // Remaining inventory
+      case 7: // Remaining inventory
         aValue = a.remainingInventory;
         bValue = b.remainingInventory;
         break;
-      case 7: // Sell-Through Rate
+      case 8: // Sell-Through Rate
         aValue = a.sellThroughRate;
         bValue = b.sellThroughRate;
         break;
-      case 8: // Total revenue
+      case 9: // Total revenue
         aValue = a.totalRevenue;
         bValue = b.totalRevenue;
         break;
-      case 9: // Revenue percentage
+      case 10: // Revenue percentage
         aValue = a.revenuePercentage;
         bValue = b.revenuePercentage;
         break;
@@ -540,6 +570,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   // Column headings for Product Summary table
   const productHeadings = [
     { title: '#' },
+    { title: 'Image' },
     { title: 'Product Name' },
     { title: 'Color' },
     { title: 'Size' },
@@ -893,7 +924,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                 itemCount={sortedProductSummary.length}
                 headings={productHeadings}
                 selectable={false}
-                sortable={[false, true, true, true, true, true, true, true, true, true]}
+                sortable={[false, false, true, true, true, true, true, true, true, true, true]}
                 defaultSortDirection="descending"
                 sortDirection={productSortDirection}
                 sortColumnIndex={productSortColumn}
@@ -906,6 +937,34 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                     position={index}
                   >
                     <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                    <IndexTable.Cell>
+                      {product.imageUrl ? (
+                        <img 
+                          src={product.imageUrl} 
+                          alt={product.productName}
+                          style={{ 
+                            width: '50px', 
+                            height: '50px', 
+                            objectFit: 'cover',
+                            borderRadius: '4px'
+                          }}
+                        />
+                      ) : (
+                        <div style={{
+                          width: '50px',
+                          height: '50px',
+                          backgroundColor: '#f0f0f0',
+                          borderRadius: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '12px',
+                          color: '#999'
+                        }}>
+                          No image
+                        </div>
+                      )}
+                    </IndexTable.Cell>
                     <IndexTable.Cell>{product.productName}</IndexTable.Cell>
                     <IndexTable.Cell>{product.color || 'N/A'}</IndexTable.Cell>
                     <IndexTable.Cell>{product.size || 'N/A'}</IndexTable.Cell>

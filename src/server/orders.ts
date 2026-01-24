@@ -103,14 +103,11 @@ router.post('/product-images', async (req: Request, res: Response) => {
       try {
         const response = await client.get({
           path: `products/${productId}`,
-          query: {
-            fields: 'id,image',
-          },
         });
 
         const product = (response.body as any).product;
-        if (product && product.image && product.image.src) {
-          productImages[productId] = product.image.src;
+        if (product && product.featured_image && product.featured_image.src) {
+          productImages[productId] = product.featured_image.src;
         }
       } catch (error) {
         console.error(`Error fetching product ${productId}:`, error);
