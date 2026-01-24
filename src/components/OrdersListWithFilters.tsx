@@ -43,12 +43,15 @@ interface ProductSummary {
   variantId: number;
   productName: string;
   variantName: string;
+  color: string;
+  size: string;
   sku: string;
   unitsSold: number;
+  remainingInventory: number;
   totalRevenue: number;
   currency: string;
-  vendor: string;
-  productType: string;
+  sellThroughRate: number;
+  revenuePercentage: number;
   imageUrl?: string;
 }
 
@@ -67,7 +70,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
   // Product summary states
   const [productSummary, setProductSummary] = useState<ProductSummary[]>([]);
-  const [productSortColumn, setProductSortColumn] = useState<number>(6); // Default to Units Sold
+  const [productSortColumn, setProductSortColumn] = useState<number>(5); // Default to Units Sold
   const [productSortDirection, setProductSortDirection] = useState<'ascending' | 'descending'>('descending');
 
   // Filter states for Polaris Filters component
@@ -305,31 +308,58 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
       }
 
       order.line_items.forEach((item) => {
-        // Use title as the unique key since product_id might be null
-        const key = item.title;
+        // Use product name + variant + SKU as unique key to show separate rows per variant
+        const key = `${item.title}-${item.variant_title || 'Default'}-${item.sku || 'N/A'}`;
+
+        // Parse variant title to extract color and size
+        // Expected format: "Color / Size" (e.g., "Black / M")
+        let color = '';
+        let size = '';
+        if (item.variant_title) {
+          const parts = item.variant_title.split('/').map(part => part.trim());
+          color = parts[0] || '';
+          size = parts[1] || '';
+        }
 
         if (productMap.has(key)) {
           const existing = productMap.get(key)!;
           existing.unitsSold += item.quantity;
+          existing.remainingInventory = 50 - existing.unitsSold;
           existing.totalRevenue += parseFloat(item.price) * item.quantity;
+          existing.sellThroughRate = (existing.unitsSold / 50) * 100;
         } else {
+          const unitsSold = item.quantity;
+          const remainingInventory = 50 - unitsSold;
+          const sellThroughRate = (unitsSold / 50) * 100;
+
           productMap.set(key, {
             productId: item.product_id,
             variantId: item.variant_id,
             productName: item.title,
             variantName: item.variant_title || '',
+            color: color,
+            size: size,
             sku: item.sku || '',
-            unitsSold: item.quantity,
+            unitsSold: unitsSold,
+            remainingInventory: remainingInventory,
             totalRevenue: parseFloat(item.price) * item.quantity,
             currency: order.currency,
-            vendor: item.vendor || '',
-            productType: item.product_type || '',
+            sellThroughRate: sellThroughRate,
+            revenuePercentage: 0, // Will be calculated below
           });
         }
       });
     });
 
+    // Calculate total revenue from all products
     const summary = Array.from(productMap.values());
+    const totalRevenue = summary.reduce((sum, product) => sum + product.totalRevenue, 0);
+
+    // Update revenue percentage for each product
+    summary.forEach(product => {
+      product.revenuePercentage = totalRevenue > 0 ? (product.totalRevenue / totalRevenue) * 100 : 0;
+    });
+
     setProductSummary(summary);
   }, [filteredOrders]);
 
@@ -469,29 +499,37 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         aValue = a.productName.toLowerCase();
         bValue = b.productName.toLowerCase();
         break;
-      case 2: // Product type
-        aValue = a.productType.toLowerCase();
-        bValue = b.productType.toLowerCase();
+      case 2: // Color
+        aValue = a.color.toLowerCase();
+        bValue = b.color.toLowerCase();
         break;
-      case 3: // Vendor
-        aValue = a.vendor.toLowerCase();
-        bValue = b.vendor.toLowerCase();
+      case 3: // Size
+        aValue = a.size.toLowerCase();
+        bValue = b.size.toLowerCase();
         break;
-      case 4: // Variant name
-        aValue = a.variantName.toLowerCase();
-        bValue = b.variantName.toLowerCase();
-        break;
-      case 5: // SKU
+      case 4: // SKU
         aValue = a.sku.toLowerCase();
         bValue = b.sku.toLowerCase();
         break;
-      case 6: // Units sold
+      case 5: // Units sold
         aValue = a.unitsSold;
         bValue = b.unitsSold;
         break;
-      case 7: // Total revenue
+      case 6: // Remaining inventory
+        aValue = a.remainingInventory;
+        bValue = b.remainingInventory;
+        break;
+      case 7: // Sell-Through Rate
+        aValue = a.sellThroughRate;
+        bValue = b.sellThroughRate;
+        break;
+      case 8: // Total revenue
         aValue = a.totalRevenue;
         bValue = b.totalRevenue;
+        break;
+      case 9: // Revenue percentage
+        aValue = a.revenuePercentage;
+        bValue = b.revenuePercentage;
         break;
       default:
         return 0;
@@ -505,12 +543,14 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const productRows = sortedProductSummary.map((product, index) => [
     index + 1,
     product.productName,
-    product.productType || 'N/A',
-    product.vendor || 'N/A',
-    product.variantName || 'Default',
+    product.color || 'N/A',
+    product.size || 'N/A',
     product.sku || 'N/A',
     product.unitsSold,
+    product.remainingInventory,
+    `${product.sellThroughRate.toFixed(1)}%`,
     `${product.currency} ${product.totalRevenue.toFixed(2)}`,
+    `${product.revenuePercentage.toFixed(1)}%`,
   ]);
 
   const handleProductSortChange = (value: string) => {
@@ -782,7 +822,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   }
 
   return (
-    <>
+    <BlockStack gap="400">
       <Card>
         <BlockStack gap="400">
           <Text as="h2" variant="headingMd">
@@ -863,20 +903,24 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                 label="Sort by"
                 labelInline
                 options={[
-                  { label: 'Units Sold (Most first)', value: '6-descending' },
-                  { label: 'Units Sold (Least first)', value: '6-ascending' },
-                  { label: 'Revenue (High to Low)', value: '7-descending' },
-                  { label: 'Revenue (Low to High)', value: '7-ascending' },
+                  { label: 'Units Sold (Most first)', value: '5-descending' },
+                  { label: 'Units Sold (Least first)', value: '5-ascending' },
+                  { label: 'Remaining Inventory (Most first)', value: '6-descending' },
+                  { label: 'Remaining Inventory (Least first)', value: '6-ascending' },
+                  { label: 'Sell-Through Rate (High to Low)', value: '7-descending' },
+                  { label: 'Sell-Through Rate (Low to High)', value: '7-ascending' },
+                  { label: 'Revenue (High to Low)', value: '8-descending' },
+                  { label: 'Revenue (Low to High)', value: '8-ascending' },
+                  { label: 'Revenue % (High to Low)', value: '9-descending' },
+                  { label: 'Revenue % (Low to High)', value: '9-ascending' },
                   { label: 'Product Name (A-Z)', value: '1-ascending' },
                   { label: 'Product Name (Z-A)', value: '1-descending' },
-                  { label: 'Type (A-Z)', value: '2-ascending' },
-                  { label: 'Type (Z-A)', value: '2-descending' },
-                  { label: 'Vendor (A-Z)', value: '3-ascending' },
-                  { label: 'Vendor (Z-A)', value: '3-descending' },
-                  { label: 'Variant (A-Z)', value: '4-ascending' },
-                  { label: 'Variant (Z-A)', value: '4-descending' },
-                  { label: 'SKU (A-Z)', value: '5-ascending' },
-                  { label: 'SKU (Z-A)', value: '5-descending' },
+                  { label: 'Color (A-Z)', value: '2-ascending' },
+                  { label: 'Color (Z-A)', value: '2-descending' },
+                  { label: 'Size (A-Z)', value: '3-ascending' },
+                  { label: 'Size (Z-A)', value: '3-descending' },
+                  { label: 'SKU (A-Z)', value: '4-ascending' },
+                  { label: 'SKU (Z-A)', value: '4-descending' },
                 ]}
                 value={`${productSortColumn}-${productSortDirection}`}
                 onChange={handleProductSortChange}
@@ -885,16 +929,18 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
             <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
               <DataTable
-                columnContentTypes={['numeric', 'text', 'text', 'text', 'text', 'text', 'numeric', 'numeric']}
+                columnContentTypes={['numeric', 'text', 'text', 'text', 'text', 'numeric', 'numeric', 'text', 'numeric', 'text']}
                 headings={[
                   '#',
                   'Product Name',
-                  'Type',
-                  'Vendor',
-                  'Variant',
+                  'Color',
+                  'Size',
                   'SKU',
                   'Units Sold',
+                  'Remaining Inventory',
+                  'Sell-Through Rate',
                   'Total Revenue',
+                  'Revenue %',
                 ]}
                 rows={productRows}
               />
@@ -902,7 +948,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
           </BlockStack>
         </Card>
       )}
-    </>
+    </BlockStack>
   );
 };
 
