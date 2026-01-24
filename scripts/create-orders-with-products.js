@@ -50,10 +50,14 @@ async function fetchProducts() {
       query: { limit: '250' },
     });
 
-    const products = response.body.products;
-    console.log(`✓ Fetched ${products.length} products with variants\n`);
+    const allProducts = response.body.products;
 
-    return products;
+    // Filter to only fashion products we created (vendor: Bismuth Fashion)
+    const fashionProducts = allProducts.filter(p => p.vendor === 'Bismuth Fashion');
+
+    console.log(`✓ Fetched ${fashionProducts.length} fashion products with variants (filtered from ${allProducts.length} total products)\n`);
+
+    return fashionProducts;
   } catch (error) {
     console.error('Error fetching products:', error.message);
     return [];
@@ -86,33 +90,50 @@ function randomDate() {
 }
 
 // Create an order with random products
-async function createOrder(products, orderNumber) {
+async function createOrder(products, orderNumber, shouldEnsureVariety = false) {
   try {
     const customer = randomItem(customers);
-    const numItems = randomNumber(1, 4); // 1-4 different products per order
-    const lineItems = [];
+    let lineItems = [];
 
-    // Select random products and variants
-    const usedProducts = new Set();
-    for (let i = 0; i < numItems; i++) {
-      let product;
-      let attempts = 0;
+    if (shouldEnsureVariety) {
+      // For variety orders, pick 1-2 random variants from a random product
+      const product = randomItem(products);
+      const numVariants = randomNumber(1, 2);
 
-      // Try to get a unique product (avoid duplicates in same order)
-      do {
-        product = randomItem(products);
-        attempts++;
-      } while (usedProducts.has(product.id) && attempts < 10);
+      for (let i = 0; i < numVariants; i++) {
+        const variant = randomItem(product.variants);
+        const quantity = randomNumber(1, 2);
 
-      usedProducts.add(product.id);
+        lineItems.push({
+          variant_id: variant.id,
+          quantity: quantity,
+        });
+      }
+    } else {
+      // Regular random orders
+      const numItems = randomNumber(1, 4); // 1-4 different products per order
+      const usedProducts = new Set();
 
-      const variant = randomItem(product.variants);
-      const quantity = randomNumber(1, 3);
+      for (let i = 0; i < numItems; i++) {
+        let product;
+        let attempts = 0;
 
-      lineItems.push({
-        variant_id: variant.id,
-        quantity: quantity,
-      });
+        // Try to get a unique product (avoid duplicates in same order)
+        do {
+          product = randomItem(products);
+          attempts++;
+        } while (usedProducts.has(product.id) && attempts < 10);
+
+        usedProducts.add(product.id);
+
+        const variant = randomItem(product.variants);
+        const quantity = randomNumber(1, 3);
+
+        lineItems.push({
+          variant_id: variant.id,
+          quantity: quantity,
+        });
+      }
     }
 
     const orderData = {
@@ -178,13 +199,93 @@ async function main() {
     process.exit(1);
   }
 
-  const numOrders = 30; // Create 30 orders
-  console.log(`Creating ${numOrders} orders...\n`);
+  console.log(`Found ${products.length} fashion products:\n`);
+  products.forEach(p => {
+    console.log(`  - ${p.title} (${p.variants.length} variants)`);
+  });
+
+  // Create variety orders - ensure each product has orders for different variants
+  const varietyOrdersPerProduct = 15; // 15 orders per product to cover all variants
+  const totalVarietyOrders = products.length * varietyOrdersPerProduct;
+
+  console.log(`\nCreating ${totalVarietyOrders} variety orders (${varietyOrdersPerProduct} per product)...\n`);
 
   const createdOrders = [];
 
-  for (let i = 1; i <= numOrders; i++) {
-    const order = await createOrder(products, i);
+  // Create variety orders for each product
+  for (let productIndex = 0; productIndex < products.length; productIndex++) {
+    const product = products[productIndex];
+    console.log(`\nCreating orders for ${product.title}...`);
+
+    for (let i = 0; i < varietyOrdersPerProduct; i++) {
+      const orderNumber = productIndex * varietyOrdersPerProduct + i + 1;
+
+      // Create order focusing on this specific product
+      const customer = randomItem(customers);
+      const variant = product.variants[i % product.variants.length]; // Cycle through all variants
+      const quantity = randomNumber(1, 3);
+
+      const orderData = {
+        email: customer.email,
+        financial_status: randomItem(statuses),
+        line_items: [
+          {
+            variant_id: variant.id,
+            quantity: quantity,
+          },
+        ],
+        customer: {
+          first_name: customer.first_name,
+          last_name: customer.last_name,
+          email: customer.email,
+        },
+        created_at: randomDate(),
+        processed_at: randomDate(),
+        billing_address: {
+          first_name: customer.first_name,
+          last_name: customer.last_name,
+          address1: `${randomNumber(100, 9999)} Main St`,
+          city: 'Los Angeles',
+          province: 'CA',
+          country: 'United States',
+          zip: '90001',
+        },
+        shipping_address: {
+          first_name: customer.first_name,
+          last_name: customer.last_name,
+          address1: `${randomNumber(100, 9999)} Main St`,
+          city: 'Los Angeles',
+          province: 'CA',
+          country: 'United States',
+          zip: '90001',
+        },
+      };
+
+      try {
+        const response = await client.post({
+          path: 'orders',
+          data: { order: orderData },
+          type: 'application/json',
+        });
+
+        const order = response.body.order;
+        console.log(`  ✓ Order ${orderNumber}: #${order.name} - ${variant.title || 'Default'} (${order.financial_status})`);
+        createdOrders.push(order);
+      } catch (error) {
+        console.error(`  ✗ Error creating order ${orderNumber}:`, error.message);
+      }
+
+      // Wait a bit between requests to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+  }
+
+  // Create additional random mixed orders
+  const numRandomOrders = 20;
+  console.log(`\n\nCreating ${numRandomOrders} additional random orders...\n`);
+
+  for (let i = 1; i <= numRandomOrders; i++) {
+    const order = await createOrder(products, totalVarietyOrders + i, false);
     if (order) {
       createdOrders.push(order);
     }
