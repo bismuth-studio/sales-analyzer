@@ -96,7 +96,6 @@ router.post('/product-images', async (req: Request, res: Response) => {
     const client = new shopify.clients.Rest({ session });
     const productImages: { [key: number]: string } = {};
 
-    // Fetch product details in batches
     const uniqueProductIds = [...new Set(productIds)];
 
     for (const productId of uniqueProductIds) {
@@ -106,12 +105,12 @@ router.post('/product-images', async (req: Request, res: Response) => {
         });
 
         const product = (response.body as any).product;
-        if (product && product.featured_image && product.featured_image.src) {
-          productImages[productId] = product.featured_image.src;
+        const imageUrl = product?.image?.src || product?.images?.[0]?.src;
+        if (imageUrl) {
+          productImages[productId] = imageUrl;
         }
-      } catch (error) {
-        console.error(`Error fetching product ${productId}:`, error);
-        // Continue with other products even if one fails
+      } catch (error: any) {
+        console.error(`Error fetching product ${productId}:`, error?.message);
       }
     }
 

@@ -357,26 +357,25 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     const summary = Array.from(productMap.values());
     const totalRevenue = summary.reduce((sum, product) => sum + product.totalRevenue, 0);
 
-    // Update revenue percentage for each product
+    // Update revenue percentage and image URL for each product
     summary.forEach(product => {
       product.revenuePercentage = totalRevenue > 0 ? (product.totalRevenue / totalRevenue) * 100 : 0;
-      // Add image URL if it exists
       product.imageUrl = productImages[product.productId];
     });
 
     setProductSummary(summary);
-  }, [filteredOrders]);
+  }, [filteredOrders, productImages]);
 
   // Update product summary when filtered orders change
   useEffect(() => {
     generateProductSummary();
   }, [generateProductSummary]);
 
-  // Fetch product images only once when productSummary first has data
+  // Fetch product images when productSummary has data
   useEffect(() => {
     if (productSummary.length > 0 && shop) {
       const productIds = [...new Set(productSummary.map(p => p.productId))];
-      
+
       fetch(`/api/orders/product-images?shop=${encodeURIComponent(shop)}`, {
         method: 'POST',
         headers: {
