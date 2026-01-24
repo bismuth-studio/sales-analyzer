@@ -374,7 +374,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
   // Fetch product images only once when productSummary first has data
   useEffect(() => {
-    if (productSummary.length > 0 && shop && Object.keys(productImages).length === 0) {
+    if (productSummary.length > 0 && shop) {
       const productIds = [...new Set(productSummary.map(p => p.productId))];
       
       fetch(`/api/orders/product-images?shop=${encodeURIComponent(shop)}`, {
@@ -392,7 +392,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         })
         .catch(error => console.error('Error fetching product images:', error));
     }
-  }, [productSummary, shop, productImages]);
+  }, [productSummary.length, shop]);
 
   const fetchOrders = async () => {
     try {

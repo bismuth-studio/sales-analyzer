@@ -8,9 +8,19 @@ function App() {
   const [shop, setShop] = useState<string>('');
 
   useEffect(() => {
-    // Get shop from URL parameters
+    // Get shop from URL parameters or from Shopify context
     const params = new URLSearchParams(window.location.search);
-    const shopParam = params.get('shop');
+    let shopParam = params.get('shop');
+    
+    // If not in URL, try to extract from the pathname
+    // In Shopify admin, the URL is like: /store/bismuth-dev/apps/drop-leak-v2
+    if (!shopParam) {
+      const pathMatch = window.location.pathname.match(/\/store\/([^\/]+)\//);
+      if (pathMatch) {
+        shopParam = pathMatch[1] + '.myshopify.com';
+      }
+    }
+    
     if (shopParam) {
       setShop(shopParam);
     }
