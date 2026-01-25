@@ -849,6 +849,27 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     ? ((totalOrders / totalSessions) * 100).toFixed(2)
     : null;
 
+  // Calculate top 3 best-selling products (aggregated by product, not variant)
+  const topProducts = (() => {
+    const productTotals = new Map<string, { title: string; productId: number; unitsSold: number }>();
+
+    sortedOrders.forEach(order => {
+      order.line_items.forEach(item => {
+        const title = item.title;
+        const existing = productTotals.get(title);
+        if (existing) {
+          existing.unitsSold += item.quantity;
+        } else {
+          productTotals.set(title, { title, productId: item.product_id, unitsSold: item.quantity });
+        }
+      });
+    });
+
+    return Array.from(productTotals.values())
+      .sort((a, b) => b.unitsSold - a.unitsSold)
+      .slice(0, 4);
+  })();
+
   return (
     <BlockStack gap="400">
       {/* Summary Metrics Section */}
@@ -860,15 +881,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
           <InlineStack gap="800" align="start">
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
-                Total Orders
-              </Text>
-              <Text as="p" variant="headingXl">
-                {totalOrders.toLocaleString()}
-              </Text>
-            </BlockStack>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Unique Customers
+                Customers
               </Text>
               <Text as="p" variant="headingXl">
                 {uniqueCustomers.toLocaleString()}
@@ -876,18 +889,26 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             </BlockStack>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
-                Total Revenue
+                Orders
               </Text>
               <Text as="p" variant="headingXl">
-                {currency} {totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {totalOrders.toLocaleString()}
               </Text>
             </BlockStack>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
-                Items Sold
+                Items
               </Text>
               <Text as="p" variant="headingXl">
                 {totalItemsSold.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Revenue
+              </Text>
+              <Text as="p" variant="headingXl">
+                {currency} {totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
             </BlockStack>
             {conversionRate !== null && (
@@ -901,6 +922,79 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
               </BlockStack>
             )}
           </InlineStack>
+          {topProducts.length > 0 && (
+            <BlockStack gap="200">
+              <Text as="p" variant="bodySm" tone="subdued">Top Sellers</Text>
+              <InlineStack gap="400" align="start">
+                {topProducts.map((p, rank) => {
+                  const imageUrl = productImages[String(p.productId)];
+                  return (
+                    <div
+                      key={p.title}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px',
+                        backgroundColor: '#f6f6f7',
+                        borderRadius: '8px',
+                        minWidth: '200px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          backgroundColor: rank === 0 ? '#ffd700' : rank === 1 ? '#c0c0c0' : rank === 2 ? '#cd7f32' : '#6b7280',
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: rank === 0 ? '#000' : '#fff',
+                          fontWeight: 'bold',
+                          fontSize: '12px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {rank + 1}
+                      </div>
+                      {imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt={p.title}
+                          style={{
+                            width: '40px',
+                            height: '40px',
+                            objectFit: 'cover',
+                            borderRadius: '4px',
+                            flexShrink: 0,
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: '40px',
+                            height: '40px',
+                            backgroundColor: '#e1e1e1',
+                            borderRadius: '4px',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <div style={{ overflow: 'hidden' }}>
+                        <Text as="p" variant="bodySm" fontWeight="semibold" truncate>
+                          {p.title}
+                        </Text>
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          {p.unitsSold} sold
+                        </Text>
+                      </div>
+                    </div>
+                  );
+                })}
+              </InlineStack>
+            </BlockStack>
+          )}
         </BlockStack>
       </Card>
 
@@ -1003,7 +1097,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
               {productSummary.length} products from {sortedOrders.length} orders
             </Text>
 
-            <div style={{ maxHeight: '80vh', overflow: 'auto' }}>
+            <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
               <IndexTable
                 resourceName={{ singular: 'product', plural: 'products' }}
                 itemCount={sortedProductSummary.length}
