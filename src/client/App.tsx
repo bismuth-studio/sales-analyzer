@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppProvider, Page, Card, Layout, Text } from '@shopify/polaris';
+import { AppProvider, Page, Card, Layout, Text, Link, BlockStack } from '@shopify/polaris';
 import '@shopify/polaris/build/esm/styles.css';
 import './styles.css';
 import OrdersListWithFilters from '../components/OrdersListWithFilters';
@@ -37,10 +37,20 @@ function App() {
           <Layout>
             <Layout.Section>
               <Card>
-                <Text as="h2" variant="headingMd">Welcome to Sales Analyzer</Text>
-                <Text as="p">
-                  Track your sales data with precision. View your last 50 orders below.
-                </Text>
+                <BlockStack gap="200">
+                  <Text as="h2" variant="headingMd">Welcome to Sales Analyzer</Text>
+                  <Text as="p">
+                    Track your sales data with precision. View your orders below.
+                  </Text>
+                  {shop && (
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      Session expired?{' '}
+                      <Link url={`${window.location.origin}/api/shopify/auth?shop=${encodeURIComponent(shop)}`} target="_blank">
+                        Click here to re-authenticate
+                      </Link>
+                    </Text>
+                  )}
+                </BlockStack>
               </Card>
             </Layout.Section>
 

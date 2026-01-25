@@ -86,8 +86,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const [startTime, setStartTime] = useState<string>('');
   const [endTime, setEndTime] = useState<string>('');
 
-  // Product images state
-  const [productImages, setProductImages] = useState<{ [key: number]: string }>({});
+  // Product images state (keys can be numbers or strings from JSON)
+  const [productImages, setProductImages] = useState<{ [key: string]: string }>({});
+
+  // Analytics state for conversion rate
+  const [totalSessions, setTotalSessions] = useState<number | null>(null);
 
   useEffect(() => {
     if (!shop) {
@@ -96,7 +99,27 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     }
 
     fetchOrders();
+    fetchAnalytics();
   }, [shop]);
+
+  const fetchAnalytics = async () => {
+    try {
+      const response = await fetch(`/api/orders/analytics?shop=${encodeURIComponent(shop)}`);
+      const data = await response.json();
+
+      if (data.success && data.analytics?.data?.shopifyqlQuery?.tableData?.rowData) {
+        const rowData = data.analytics.data.shopifyqlQuery.tableData.rowData;
+        if (rowData.length > 0 && rowData[0].length > 0) {
+          const sessions = parseInt(rowData[0][0], 10);
+          if (!isNaN(sessions)) {
+            setTotalSessions(sessions);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    }
+  };
 
   useEffect(() => {
     applyFilters();
@@ -298,6 +321,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
       }
 
       order.line_items.forEach((item) => {
+        // Skip items with null/invalid product_id or variant_id
+        if (!item.product_id || !item.variant_id) {
+          return;
+        }
+
         // Use product name + variant + SKU as unique key to show separate rows per variant
         const key = `${item.title}-${item.variant_title || 'Default'}-${item.sku || 'N/A'}`;
 
@@ -347,9 +375,10 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     const totalRevenue = summary.reduce((sum, product) => sum + product.totalRevenue, 0);
 
     // Update revenue percentage and image URL for each product
+    // Note: JSON keys are strings, so we look up by string key
     summary.forEach(product => {
       product.revenuePercentage = totalRevenue > 0 ? (product.totalRevenue / totalRevenue) * 100 : 0;
-      product.imageUrl = productImages[product.productId];
+      product.imageUrl = productImages[String(product.productId)];
     });
 
     setProductSummary(summary);
@@ -360,27 +389,49 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     generateProductSummary();
   }, [generateProductSummary]);
 
-  // Fetch product images when productSummary has data
+  // Fetch product images when orders are loaded
   useEffect(() => {
-    if (productSummary.length > 0 && shop) {
-      const productIds = [...new Set(productSummary.map(p => p.productId))];
+    if (orders.length > 0 && shop) {
+      // Extract all unique product IDs from all orders
+      const productIds: number[] = [];
+      orders.forEach(order => {
+        order.line_items.forEach(item => {
+          if (item.product_id && item.product_id > 0) {
+            productIds.push(item.product_id);
+          }
+        });
+      });
 
+      const uniqueIds = [...new Set(productIds)];
+      if (uniqueIds.length === 0) return;
+
+      console.log('Fetching images for', uniqueIds.length, 'products:', uniqueIds);
       fetch(`/api/orders/product-images?shop=${encodeURIComponent(shop)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ productIds }),
+        body: JSON.stringify({ productIds: uniqueIds }),
       })
-        .then(response => response.json())
+        .then(response => {
+          console.log('Product images response status:', response.status, response.statusText);
+          if (!response.ok) {
+            return response.text().then(text => {
+              throw new Error(`HTTP ${response.status}: ${text}`);
+            });
+          }
+          return response.json();
+        })
         .then(data => {
-          if (data.success) {
+          console.log('Product images data:', data);
+          if (data.success && data.productImages) {
+            console.log('Setting product images:', Object.keys(data.productImages).length, 'images');
             setProductImages(data.productImages);
           }
         })
         .catch(error => console.error('Error fetching product images:', error));
     }
-  }, [productSummary.length, shop]);
+  }, [orders.length, shop]);
 
   const fetchOrders = async () => {
     try {
@@ -449,9 +500,17 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   }
 
   if (error) {
+    const authUrl = `${window.location.origin}/api/shopify/auth?shop=${encodeURIComponent(shop)}`;
+
     return (
       <Banner tone="critical" title="Error loading orders">
         <p>{error}</p>
+        <p style={{ marginTop: '12px' }}>
+          This usually happens when the session expires. {' '}
+          <Link url={authUrl} target="_blank">
+            Click here to re-authenticate
+          </Link>
+        </p>
       </Banner>
     );
   }
@@ -769,15 +828,79 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     });
   }
 
+  // Calculate summary metrics
+  const totalOrders = sortedOrders.length;
+  const uniqueCustomers = new Set(sortedOrders.map(order => order.email).filter(Boolean)).size;
+  const totalRevenue = sortedOrders.reduce((sum, order) => sum + parseFloat(order.total_price), 0);
+  const totalItemsSold = sortedOrders.reduce((sum, order) =>
+    sum + order.line_items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+  const currency = sortedOrders.length > 0 ? sortedOrders[0].currency : 'USD';
+  const conversionRate = totalSessions && totalSessions > 0
+    ? ((totalOrders / totalSessions) * 100).toFixed(2)
+    : null;
+
   return (
     <BlockStack gap="400">
+      {/* Summary Metrics Section */}
+      <Card>
+        <BlockStack gap="400">
+          <Text as="h2" variant="headingMd">
+            Summary
+          </Text>
+          <InlineStack gap="800" align="start">
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Total Orders
+              </Text>
+              <Text as="p" variant="headingXl">
+                {totalOrders.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Unique Customers
+              </Text>
+              <Text as="p" variant="headingXl">
+                {uniqueCustomers.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Total Revenue
+              </Text>
+              <Text as="p" variant="headingXl">
+                {currency} {totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Items Sold
+              </Text>
+              <Text as="p" variant="headingXl">
+                {totalItemsSold.toLocaleString()}
+              </Text>
+            </BlockStack>
+            {conversionRate !== null && (
+              <BlockStack gap="100">
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Conversion Rate
+                </Text>
+                <Text as="p" variant="headingXl">
+                  {conversionRate}%
+                </Text>
+              </BlockStack>
+            )}
+          </InlineStack>
+        </BlockStack>
+      </Card>
+
       <Card>
         <BlockStack gap="400">
           <Text as="h2" variant="headingMd">
             Orders
           </Text>
           <Text as="p" variant="bodyMd" fontWeight="semibold">
-            Your Last 50 Sales ({sortedOrders.length} of {orders.length} orders)
+            Showing {sortedOrders.length} of {orders.length} orders
           </Text>
 
           <Filters

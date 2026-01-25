@@ -8,3 +8,8 @@
 .Polaris-IndexTable__StickyTableHeader {
   display: none !important;
 }
+
+/* Add padding at the bottom of the page for better visual presentation */
+.Polaris-Page {
+  padding-bottom: 40px !important;
+}
