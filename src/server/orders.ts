@@ -113,6 +113,7 @@ router.post('/product-images', async (req: Request, res: Response) => {
     const { productIds } = req.body;
 
     console.log('Received productIds:', productIds?.length, 'items');
+    console.log('First few productIds:', productIds?.slice(0, 3), 'types:', productIds?.slice(0, 3).map((id: any) => typeof id));
 
     if (!shop) {
       return res.status(400).json({ error: 'Missing shop parameter' });
@@ -133,21 +134,28 @@ router.post('/product-images', async (req: Request, res: Response) => {
     const productImages: { [key: string]: string } = {};
 
     // Filter out null, undefined, and invalid product IDs
-    const uniqueProductIds = [...new Set(productIds)].filter(
-      (id): id is number => id != null && typeof id === 'number' && id > 0
-    );
+    // Product IDs can be numbers or numeric strings - normalize them
+    const uniqueProductIds = [...new Set(productIds)]
+      .map((id): number | null => {
+        if (id == null) return null;
+        const numId = typeof id === 'string' ? parseInt(id, 10) : id;
+        return typeof numId === 'number' && !isNaN(numId) && numId > 0 ? numId : null;
+      })
+      .filter((id): id is number => id !== null);
 
-    console.log('Fetching images for', uniqueProductIds.length, 'unique products');
+    console.log('Fetching images for', uniqueProductIds.length, 'unique products:', uniqueProductIds.slice(0, 3));
 
     // Fetch all products in parallel for speed
     const fetchPromises = uniqueProductIds.map(async (productId) => {
       try {
+        console.log(`Fetching product ${productId}...`);
         const response = await client.get({
           path: `products/${productId}`,
         });
 
         const product = (response.body as any).product;
         const imageUrl = product?.image?.src || product?.images?.[0]?.src;
+        console.log(`Product ${productId}: image=${imageUrl ? 'found' : 'not found'}`);
         if (imageUrl) {
           return { productId: String(productId), imageUrl };
         }
