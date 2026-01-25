@@ -68,18 +68,24 @@ router.get('/recent', async (req: Request, res: Response) => {
 
       // Check for next page using pageInfo from response
       const headers = response.headers as Record<string, string | string[] | undefined>;
-      const linkHeader = headers?.link;
+      const linkHeader = headers?.link || headers?.Link;
       const linkStr = Array.isArray(linkHeader) ? linkHeader[0] : linkHeader;
 
+      console.log('Link header:', linkStr ? linkStr.substring(0, 200) : 'none');
+
       if (linkStr && linkStr.includes('rel="next"')) {
-        // Extract page_info from link header
-        const nextMatch = linkStr.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/);
+        // Extract page_info from link header - try multiple patterns
+        const nextMatch = linkStr.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/) ||
+                          linkStr.match(/page_info=([^&>;]+).*rel="next"/);
         if (nextMatch) {
           pageInfo = nextMatch[1];
+          console.log('Found next page_info:', pageInfo.substring(0, 50) + '...');
         } else {
+          console.log('Could not extract page_info from Link header');
           hasNextPage = false;
         }
       } else {
+        console.log('No next page in Link header');
         hasNextPage = false;
       }
     }

@@ -99,7 +99,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     }
 
     fetchOrders();
-    fetchAnalytics();
+    // Analytics disabled - ShopifyQL API not available for this store type
+    // fetchAnalytics();
   }, [shop]);
 
   const fetchAnalytics = async () => {
@@ -107,13 +108,22 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
       const response = await fetch(`/api/orders/analytics?shop=${encodeURIComponent(shop)}`);
       const data = await response.json();
 
+      console.log('Analytics response:', JSON.stringify(data, null, 2));
+
       if (data.success && data.analytics?.data?.shopifyqlQuery?.tableData?.rowData) {
         const rowData = data.analytics.data.shopifyqlQuery.tableData.rowData;
+        console.log('Analytics rowData:', rowData);
         if (rowData.length > 0 && rowData[0].length > 0) {
           const sessions = parseInt(rowData[0][0], 10);
+          console.log('Parsed sessions:', sessions);
           if (!isNaN(sessions)) {
             setTotalSessions(sessions);
           }
+        }
+      } else {
+        console.log('Analytics data structure not found. Keys:', Object.keys(data));
+        if (data.analytics) {
+          console.log('Analytics object keys:', Object.keys(data.analytics));
         }
       }
     } catch (error) {
