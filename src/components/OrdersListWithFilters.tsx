@@ -77,7 +77,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const [dateRange, setDateRange] = useState<string[]>([]);
   const [orderStatus, setOrderStatus] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<string[]>([]);
-  const [dayOfWeek, setDayOfWeek] = useState<string[]>([]);
 
   // Additional filter states
   const [startDate, setStartDate] = useState<string>('');
@@ -101,7 +100,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
   useEffect(() => {
     applyFilters();
-  }, [orders, queryValue, dateRange, orderStatus, priceRange, dayOfWeek, startDate, endDate, minPrice, maxPrice, startTime, endTime]);
+  }, [orders, queryValue, dateRange, orderStatus, priceRange, startDate, endDate, minPrice, maxPrice, startTime, endTime]);
 
   useEffect(() => {
     if (filteredOrders.length >= 0) {
@@ -193,15 +192,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
       }
     }
 
-    // Apply day of week filter
-    if (dayOfWeek.length > 0) {
-      filtered = filtered.filter(order => {
-        const orderDate = new Date(order.created_at);
-        const day = orderDate.getDay().toString();
-        return dayOfWeek.includes(day);
-      });
-    }
-
     // Apply time range (custom only)
     if (startTime || endTime) {
       filtered = filtered.filter(order => {
@@ -290,7 +280,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     setDateRange([]);
     setOrderStatus([]);
     setPriceRange([]);
-    setDayOfWeek([]);
     setStartDate('');
     setEndDate('');
     setMinPrice('');
@@ -499,7 +488,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   };
 
   // Column headings for Orders table
-  const orderHeadings = [
+  const orderHeadings: [{ title: string }, ...{ title: string }[]] = [
     { title: '#' },
     { title: 'Order' },
     { title: 'Customer' },
@@ -567,7 +556,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   });
 
   // Column headings for Product Summary table
-  const productHeadings = [
+  const productHeadings: [{ title: string }, ...{ title: string }[]] = [
     { title: '#' },
     { title: 'Image' },
     { title: 'Product Name' },
@@ -631,28 +620,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         />
       ),
       shortcut: true,
-    },
-    {
-      key: 'dayOfWeek',
-      label: 'Day of week',
-      filter: (
-        <ChoiceList
-          title="Day of week"
-          titleHidden
-          choices={[
-            { label: 'Sunday', value: '0' },
-            { label: 'Monday', value: '1' },
-            { label: 'Tuesday', value: '2' },
-            { label: 'Wednesday', value: '3' },
-            { label: 'Thursday', value: '4' },
-            { label: 'Friday', value: '5' },
-            { label: 'Saturday', value: '6' },
-          ]}
-          selected={dayOfWeek}
-          onChange={setDayOfWeek}
-          allowMultiple
-        />
-      ),
     },
     {
       key: 'priceRange',
@@ -768,27 +735,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     });
   }
 
-  // Day of week filters
-  if (dayOfWeek.length > 0) {
-    const dayLabels: { [key: string]: string } = {
-      '0': 'Sunday',
-      '1': 'Monday',
-      '2': 'Tuesday',
-      '3': 'Wednesday',
-      '4': 'Thursday',
-      '5': 'Friday',
-      '6': 'Saturday',
-    };
-
-    dayOfWeek.forEach(day => {
-      appliedFilters.push({
-        key: `day-${day}`,
-        label: dayLabels[day] || day,
-        onRemove: () => setDayOfWeek(dayOfWeek.filter(d => d !== day)),
-      });
-    });
-  }
-
   // Price range filter
   if (priceRange.includes('custom') && (minPrice || maxPrice)) {
     let priceLabel = 'Price: ';
@@ -872,7 +818,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             </InlineStack>
           )}
 
-          <div style={{ height: '600px', overflow: 'auto' }}>
+          <div style={{ maxHeight: '50vh', overflow: 'auto' }}>
             <IndexTable
               resourceName={{ singular: 'order', plural: 'orders' }}
               itemCount={sortedOrders.length}
@@ -917,7 +863,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
               {productSummary.length} products from {sortedOrders.length} orders
             </Text>
 
-            <div style={{ height: '600px', overflow: 'auto' }}>
+            <div style={{ maxHeight: '80vh', overflow: 'auto' }}>
               <IndexTable
                 resourceName={{ singular: 'product', plural: 'products' }}
                 itemCount={sortedProductSummary.length}
