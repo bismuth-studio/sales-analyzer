@@ -1,1 +1,10 @@
 /* Custom styles */
+
+/* Disable sticky headers on IndexTable */
+.Polaris-IndexTable__TableHeading {
+  position: static !important;
+}
+
+.Polaris-IndexTable__StickyTableHeader {
+  display: none !important;
+}

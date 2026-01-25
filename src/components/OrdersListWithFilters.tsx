@@ -159,20 +159,20 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             startOfPeriod = new Date(now.getFullYear(), now.getMonth(), 1);
             filtered = filtered.filter(order => new Date(order.created_at) >= startOfPeriod);
             break;
-          case 'custom':
-            if (startDate) {
-              const start = new Date(startDate);
-              start.setHours(0, 0, 0, 0);
-              filtered = filtered.filter(order => new Date(order.created_at) >= start);
-            }
-            if (endDate) {
-              const end = new Date(endDate);
-              end.setHours(23, 59, 59, 999);
-              filtered = filtered.filter(order => new Date(order.created_at) <= end);
-            }
-            break;
         }
       });
+    }
+
+    // Apply custom date range (always, independent of dropdown)
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(order => new Date(order.created_at) >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(order => new Date(order.created_at) <= end);
     }
 
     // Apply status filter
@@ -591,7 +591,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             { label: 'Last 30 days', value: 'last30days' },
             { label: 'This week', value: 'thisweek' },
             { label: 'This month', value: 'thismonth' },
-            { label: 'Custom range', value: 'custom' },
           ]}
           selected={dateRange}
           onChange={setDateRange}
@@ -660,30 +659,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         </BlockStack>
       ),
     },
-    {
-      key: 'timeRange',
-      label: 'Time of day',
-      filter: (
-        <InlineStack gap="200">
-          <TextField
-            label="Start time"
-            type="time"
-            value={startTime}
-            onChange={setStartTime}
-            autoComplete="off"
-            placeholder="Start"
-          />
-          <TextField
-            label="End time"
-            type="time"
-            value={endTime}
-            onChange={setEndTime}
-            autoComplete="off"
-            placeholder="End"
-          />
-        </InlineStack>
-      ),
-    },
   ];
 
   // Build applied filters for display
@@ -699,7 +674,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         last30days: 'Last 30 days',
         thisweek: 'This week',
         thismonth: 'This month',
-        custom: startDate && endDate ? `${startDate} to ${endDate}` : 'Custom date range',
       };
 
       appliedFilters.push({
@@ -707,12 +681,29 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         label: labels[range] || range,
         onRemove: () => {
           setDateRange(dateRange.filter(d => d !== range));
-          if (range === 'custom') {
-            setStartDate('');
-            setEndDate('');
-          }
         },
       });
+    });
+  }
+
+  // Custom date range filter (independent of dropdown)
+  if (startDate || endDate) {
+    let dateLabel = 'Date: ';
+    if (startDate && endDate) {
+      dateLabel += `${startDate} to ${endDate}`;
+    } else if (startDate) {
+      dateLabel += `from ${startDate}`;
+    } else if (endDate) {
+      dateLabel += `until ${endDate}`;
+    }
+
+    appliedFilters.push({
+      key: 'customDateRange',
+      label: dateLabel,
+      onRemove: () => {
+        setStartDate('');
+        setEndDate('');
+      },
     });
   }
 
@@ -799,7 +790,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             queryPlaceholder="Search by order number or customer email"
           />
 
-          {dateRange.includes('custom') && (
+          <InlineStack gap="400" wrap={false}>
             <InlineStack gap="200">
               <TextField
                 label="Start date"
@@ -816,7 +807,23 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                 autoComplete="off"
               />
             </InlineStack>
-          )}
+            <InlineStack gap="200">
+              <TextField
+                label="Start time"
+                type="time"
+                value={startTime}
+                onChange={setStartTime}
+                autoComplete="off"
+              />
+              <TextField
+                label="End time"
+                type="time"
+                value={endTime}
+                onChange={setEndTime}
+                autoComplete="off"
+              />
+            </InlineStack>
+          </InlineStack>
 
           <div style={{ maxHeight: '50vh', overflow: 'auto' }}>
             <IndexTable
