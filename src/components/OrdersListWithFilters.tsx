@@ -1130,6 +1130,78 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         </BlockStack>
       </Card>
 
+      {/* Sold Out Variants Section */}
+      {sortedProductSummary.filter(p => p.remainingInventory <= 0).length > 0 && (
+        <Card>
+          <BlockStack gap="400">
+            <InlineStack gap="200" align="start" blockAlign="center">
+              <Text as="h2" variant="headingMd">
+                Sold Out Variants
+              </Text>
+              <Badge tone="critical">
+                {sortedProductSummary.filter(p => p.remainingInventory <= 0).length.toString()}
+              </Badge>
+            </InlineStack>
+            <InlineStack gap="400" wrap>
+              {sortedProductSummary
+                .filter(p => p.remainingInventory <= 0)
+                .map((product) => (
+                  <div
+                    key={`${product.productId}-${product.variantId}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      backgroundColor: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      borderRadius: '8px',
+                      minWidth: '220px',
+                    }}
+                  >
+                    {product.imageUrl ? (
+                      <img
+                        src={product.imageUrl}
+                        alt={product.productName}
+                        style={{
+                          width: '50px',
+                          height: '50px',
+                          objectFit: 'cover',
+                          borderRadius: '4px',
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: '50px',
+                          height: '50px',
+                          backgroundColor: '#e1e1e1',
+                          borderRadius: '4px',
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <div style={{ overflow: 'hidden' }}>
+                      <Text as="p" variant="bodySm" fontWeight="semibold" truncate>
+                        {product.productName}
+                      </Text>
+                      {(product.color || product.size) && (
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          {[product.color, product.size].filter(Boolean).join(' / ')}
+                        </Text>
+                      )}
+                      <Text as="p" variant="bodySm" tone="critical">
+                        {product.unitsSold} sold (100%)
+                      </Text>
+                    </div>
+                  </div>
+                ))}
+            </InlineStack>
+          </BlockStack>
+        </Card>
+      )}
+
       {/* Product Sales Summary Section */}
       {productSummary.length > 0 && (
         <Card>
@@ -1142,7 +1214,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                 Export CSV
               </Button>
             </InlineStack>
-            <Tabs tabs={productSummaryTabs} selected={selectedProductTab} onSelect={setSelectedProductTab}>
+            <div className="large-tabs">
+              <Tabs tabs={productSummaryTabs} selected={selectedProductTab} onSelect={setSelectedProductTab}>
               {selectedProductTab === 0 ? (
                 <>
                   <Text as="p" variant="bodyMd" fontWeight="semibold">
@@ -1278,6 +1351,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                 </>
               )}
             </Tabs>
+            </div>
           </BlockStack>
         </Card>
       )}

@@ -13,3 +13,13 @@
 .Polaris-Page {
   padding-bottom: 40px !important;
 }
+
+/* Larger tabs for Product Sales Summary */
+.large-tabs .Polaris-Tabs__Tab {
+  padding: 12px 20px !important;
+}
+
+.large-tabs .Polaris-Tabs__Title {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
