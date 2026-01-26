@@ -10,10 +10,10 @@ import {
   BlockStack,
   InlineStack,
   Link,
-  Filters,
   ChoiceList,
   TextField,
   Tabs,
+  Button,
 } from '@shopify/polaris';
 
 interface Order {
@@ -24,6 +24,7 @@ interface Order {
   total_price: string;
   currency: string;
   financial_status: string;
+  tags: string;
   line_items: Array<{
     id: number;
     title: string;
@@ -91,11 +92,10 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const [aggregatedSortDirection, setAggregatedSortDirection] = useState<'ascending' | 'descending'>('descending');
   const [selectedProductTab, setSelectedProductTab] = useState<number>(0);
 
-  // Filter states for Polaris Filters component
-  const [queryValue, setQueryValue] = useState<string>('');
-  const [dateRange, setDateRange] = useState<string[]>([]);
+  // Filter states
+  const [dateRange, setDateRange] = useState<string[]>(['today']);
   const [orderStatus, setOrderStatus] = useState<string[]>([]);
-  const [priceRange, setPriceRange] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   // Additional filter states
   const [startDate, setStartDate] = useState<string>('');
@@ -152,7 +152,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
   useEffect(() => {
     applyFilters();
-  }, [orders, queryValue, dateRange, orderStatus, priceRange, startDate, endDate, minPrice, maxPrice, startTime, endTime]);
+  }, [orders, dateRange, orderStatus, selectedTags, startDate, endDate, minPrice, maxPrice, startTime, endTime]);
 
   useEffect(() => {
     if (filteredOrders.length >= 0) {
@@ -163,13 +163,13 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const applyFilters = () => {
     let filtered = [...orders];
 
-    // Apply search query
-    if (queryValue) {
-      const query = queryValue.toLowerCase();
-      filtered = filtered.filter(order =>
-        order.name.toLowerCase().includes(query) ||
-        (order.email && order.email.toLowerCase().includes(query))
-      );
+    // Apply tag filter
+    if (selectedTags.length > 0) {
+      filtered = filtered.filter(order => {
+        if (!order.tags) return false;
+        const orderTags = order.tags.split(',').map(t => t.trim().toLowerCase());
+        return selectedTags.some(tag => orderTags.includes(tag.toLowerCase()));
+      });
     }
 
     // Apply date range filter
@@ -233,15 +233,13 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     }
 
     // Apply price range
-    if (priceRange.includes('custom')) {
-      if (minPrice) {
-        const min = parseFloat(minPrice);
-        filtered = filtered.filter(order => parseFloat(order.total_price) >= min);
-      }
-      if (maxPrice) {
-        const max = parseFloat(maxPrice);
-        filtered = filtered.filter(order => parseFloat(order.total_price) <= max);
-      }
+    if (minPrice) {
+      const min = parseFloat(minPrice);
+      filtered = filtered.filter(order => parseFloat(order.total_price) >= min);
+    }
+    if (maxPrice) {
+      const max = parseFloat(maxPrice);
+      filtered = filtered.filter(order => parseFloat(order.total_price) <= max);
     }
 
     // Apply time range (custom only)
@@ -326,12 +324,10 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     applySorting(index, direction);
   };
 
-  const handleQueryValueRemove = useCallback(() => setQueryValue(''), []);
   const handleFiltersClearAll = useCallback(() => {
-    setQueryValue('');
     setDateRange([]);
     setOrderStatus([]);
-    setPriceRange([]);
+    setSelectedTags([]);
     setStartDate('');
     setEndDate('');
     setMinPrice('');
@@ -589,6 +585,25 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     );
   };
 
+  // Get all unique tags from orders - MUST be before early returns
+  const availableTags = React.useMemo(() => {
+    const tagSet = new Set<string>();
+    orders.forEach(order => {
+      if (order.tags) {
+        order.tags.split(',').forEach(tag => {
+          const trimmed = tag.trim();
+          if (trimmed) tagSet.add(trimmed);
+        });
+      }
+    });
+    return Array.from(tagSet).sort();
+  }, [orders]);
+
+  // Check if any filters are active - MUST be before early returns
+  const hasActiveFilters = dateRange.length > 0 || orderStatus.length > 0 ||
+    selectedTags.length > 0 || startDate || endDate ||
+    minPrice || maxPrice || startTime || endTime;
+
   if (loading) {
     return (
       <Card>
@@ -804,206 +819,12 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     { id: 'by-product', content: 'By Product' },
   ];
 
-  const filters = [
-    {
-      key: 'dateRange',
-      label: 'Date range',
-      filter: (
-        <ChoiceList
-          title="Date range"
-          titleHidden
-          choices={[
-            { label: 'Today', value: 'today' },
-            { label: 'Yesterday', value: 'yesterday' },
-            { label: 'Last 7 days', value: 'last7days' },
-            { label: 'Last 30 days', value: 'last30days' },
-            { label: 'This week', value: 'thisweek' },
-            { label: 'This month', value: 'thismonth' },
-          ]}
-          selected={dateRange}
-          onChange={setDateRange}
-          allowMultiple
-        />
-      ),
-      shortcut: true,
-    },
-    {
-      key: 'orderStatus',
-      label: 'Order status',
-      filter: (
-        <ChoiceList
-          title="Order status"
-          titleHidden
-          choices={[
-            { label: 'Paid', value: 'paid' },
-            { label: 'Pending', value: 'pending' },
-            { label: 'Authorized', value: 'authorized' },
-            { label: 'Refunded', value: 'refunded' },
-            { label: 'Voided', value: 'voided' },
-          ]}
-          selected={orderStatus}
-          onChange={setOrderStatus}
-          allowMultiple
-        />
-      ),
-      shortcut: true,
-    },
-    {
-      key: 'priceRange',
-      label: 'Price range',
-      filter: (
-        <BlockStack gap="200">
-          <ChoiceList
-            title="Price range"
-            titleHidden
-            choices={[{ label: 'Custom range', value: 'custom' }]}
-            selected={priceRange}
-            onChange={setPriceRange}
-          />
-          {priceRange.includes('custom') && (
-            <InlineStack gap="200">
-              <TextField
-                label="Min price"
-                type="number"
-                value={minPrice}
-                onChange={setMinPrice}
-                prefix="$"
-                autoComplete="off"
-                labelHidden
-                placeholder="Min"
-              />
-              <TextField
-                label="Max price"
-                type="number"
-                value={maxPrice}
-                onChange={setMaxPrice}
-                prefix="$"
-                autoComplete="off"
-                labelHidden
-                placeholder="Max"
-              />
-            </InlineStack>
-          )}
-        </BlockStack>
-      ),
-    },
-  ];
-
-  // Build applied filters for display
-  const appliedFilters = [];
-
-  // Date range filters
-  if (dateRange.length > 0) {
-    dateRange.forEach(range => {
-      const labels: { [key: string]: string } = {
-        today: 'Today',
-        yesterday: 'Yesterday',
-        last7days: 'Last 7 days',
-        last30days: 'Last 30 days',
-        thisweek: 'This week',
-        thismonth: 'This month',
-      };
-
-      appliedFilters.push({
-        key: `dateRange-${range}`,
-        label: labels[range] || range,
-        onRemove: () => {
-          setDateRange(dateRange.filter(d => d !== range));
-        },
-      });
-    });
-  }
-
-  // Custom date range filter (independent of dropdown)
-  if (startDate || endDate) {
-    let dateLabel = 'Date: ';
-    if (startDate && endDate) {
-      dateLabel += `${startDate} to ${endDate}`;
-    } else if (startDate) {
-      dateLabel += `from ${startDate}`;
-    } else if (endDate) {
-      dateLabel += `until ${endDate}`;
-    }
-
-    appliedFilters.push({
-      key: 'customDateRange',
-      label: dateLabel,
-      onRemove: () => {
-        setStartDate('');
-        setEndDate('');
-      },
-    });
-  }
-
-  // Order status filters
-  if (orderStatus.length > 0) {
-    orderStatus.forEach(status => {
-      const labels: { [key: string]: string } = {
-        paid: 'Paid',
-        pending: 'Pending',
-        authorized: 'Authorized',
-        refunded: 'Refunded',
-        voided: 'Voided',
-      };
-
-      appliedFilters.push({
-        key: `status-${status}`,
-        label: labels[status] || status,
-        onRemove: () => setOrderStatus(orderStatus.filter(s => s !== status)),
-      });
-    });
-  }
-
-  // Price range filter
-  if (priceRange.includes('custom') && (minPrice || maxPrice)) {
-    let priceLabel = 'Price: ';
-    if (minPrice && maxPrice) {
-      priceLabel += `$${minPrice} - $${maxPrice}`;
-    } else if (minPrice) {
-      priceLabel += `$${minPrice}+`;
-    } else if (maxPrice) {
-      priceLabel += `up to $${maxPrice}`;
-    }
-
-    appliedFilters.push({
-      key: 'priceRange',
-      label: priceLabel,
-      onRemove: () => {
-        setPriceRange([]);
-        setMinPrice('');
-        setMaxPrice('');
-      },
-    });
-  }
-
-  // Time range filter
-  if (startTime || endTime) {
-    let timeLabel = 'Time: ';
-    if (startTime && endTime) {
-      timeLabel += `${startTime} - ${endTime}`;
-    } else if (startTime) {
-      timeLabel += `after ${startTime}`;
-    } else if (endTime) {
-      timeLabel += `before ${endTime}`;
-    }
-
-    appliedFilters.push({
-      key: 'timeRange',
-      label: timeLabel,
-      onRemove: () => {
-        setStartTime('');
-        setEndTime('');
-      },
-    });
-  }
-
   // Calculate summary metrics
   const totalOrders = sortedOrders.length;
   const uniqueCustomers = new Set(sortedOrders.map(order => order.email).filter(Boolean)).size;
   const totalRevenue = sortedOrders.reduce((sum, order) => sum + parseFloat(order.total_price), 0);
   const totalItemsSold = sortedOrders.reduce((sum, order) =>
     sum + order.line_items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
-  const currency = sortedOrders.length > 0 ? sortedOrders[0].currency : 'USD';
   const conversionRate = totalSessions && totalSessions > 0
     ? ((totalOrders / totalSessions) * 100).toFixed(2)
     : null;
@@ -1029,8 +850,160 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
       .slice(0, 4);
   })();
 
+  // Helper function to format currency
+  const formatCurrency = (amount: number) => {
+    return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  // Export to CSV function
+  const exportToCSV = () => {
+    let csvContent = '';
+
+    // Section 1: By Variant
+    csvContent += 'PRODUCT SALES SUMMARY - BY VARIANT\n';
+    csvContent += '#,Product Name,Color,Size,SKU,Units Sold,Remaining Inventory,Sell-Through Rate,Total Revenue,Revenue %\n';
+    sortedProductSummary.forEach((product, index) => {
+      csvContent += `${index + 1},"${product.productName}","${product.color || 'N/A'}","${product.size || 'N/A'}","${product.sku || 'N/A'}",${product.unitsSold},${product.remainingInventory},${product.sellThroughRate.toFixed(1)}%,${formatCurrency(product.totalRevenue)},${product.revenuePercentage.toFixed(1)}%\n`;
+    });
+
+    csvContent += '\n\n';
+
+    // Section 2: By Product
+    csvContent += 'PRODUCT SALES SUMMARY - BY PRODUCT\n';
+    csvContent += '#,Product Name,Units Sold,Remaining Inventory,Sell-Through Rate,Total Revenue,Revenue %\n';
+    sortedAggregatedProductSummary.forEach((product, index) => {
+      csvContent += `${index + 1},"${product.productName}",${product.unitsSold},${product.remainingInventory},${product.sellThroughRate.toFixed(1)}%,${formatCurrency(product.totalRevenue)},${product.revenuePercentage.toFixed(1)}%\n`;
+    });
+
+    // Create and download the file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `product_sales_summary_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <BlockStack gap="400">
+      {/* Filters Section */}
+      <Card>
+        <BlockStack gap="400">
+          <InlineStack align="space-between">
+            <Text as="h2" variant="headingMd">
+              Filters
+            </Text>
+            {hasActiveFilters && (
+              <Button variant="plain" onClick={handleFiltersClearAll}>
+                Clear all filters
+              </Button>
+            )}
+          </InlineStack>
+
+          <InlineStack gap="400" wrap>
+            <div style={{ minWidth: '150px' }}>
+              <ChoiceList
+                title="Date range"
+                choices={[
+                  { label: 'Today', value: 'today' },
+                  { label: 'Yesterday', value: 'yesterday' },
+                  { label: 'Last 7 days', value: 'last7days' },
+                  { label: 'Last 30 days', value: 'last30days' },
+                  { label: 'This week', value: 'thisweek' },
+                  { label: 'This month', value: 'thismonth' },
+                ]}
+                selected={dateRange}
+                onChange={setDateRange}
+              />
+            </div>
+            <div style={{ minWidth: '150px' }}>
+              <ChoiceList
+                title="Order status"
+                choices={[
+                  { label: 'Paid', value: 'paid' },
+                  { label: 'Pending', value: 'pending' },
+                  { label: 'Authorized', value: 'authorized' },
+                  { label: 'Refunded', value: 'refunded' },
+                  { label: 'Voided', value: 'voided' },
+                ]}
+                selected={orderStatus}
+                onChange={setOrderStatus}
+                allowMultiple
+              />
+            </div>
+            {availableTags.length > 0 && (
+              <div style={{ minWidth: '150px' }}>
+                <ChoiceList
+                  title="Tags"
+                  choices={availableTags.map(tag => ({ label: tag, value: tag }))}
+                  selected={selectedTags}
+                  onChange={setSelectedTags}
+                  allowMultiple
+                />
+              </div>
+            )}
+          </InlineStack>
+
+          <InlineStack gap="400" wrap={false}>
+            <InlineStack gap="200">
+              <TextField
+                label="Start date"
+                type="date"
+                value={startDate}
+                onChange={setStartDate}
+                autoComplete="off"
+              />
+              <TextField
+                label="End date"
+                type="date"
+                value={endDate}
+                onChange={setEndDate}
+                autoComplete="off"
+              />
+            </InlineStack>
+            <InlineStack gap="200">
+              <TextField
+                label="Start time"
+                type="time"
+                value={startTime}
+                onChange={setStartTime}
+                autoComplete="off"
+              />
+              <TextField
+                label="End time"
+                type="time"
+                value={endTime}
+                onChange={setEndTime}
+                autoComplete="off"
+              />
+            </InlineStack>
+            <InlineStack gap="200">
+              <TextField
+                label="Min price"
+                type="number"
+                value={minPrice}
+                onChange={setMinPrice}
+                prefix="$"
+                autoComplete="off"
+                placeholder="Min"
+              />
+              <TextField
+                label="Max price"
+                type="number"
+                value={maxPrice}
+                onChange={setMaxPrice}
+                prefix="$"
+                autoComplete="off"
+                placeholder="Max"
+              />
+            </InlineStack>
+          </InlineStack>
+        </BlockStack>
+      </Card>
+
       {/* Summary Metrics Section */}
       <Card>
         <BlockStack gap="400">
@@ -1067,7 +1040,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                 Revenue
               </Text>
               <Text as="p" variant="headingXl">
-                {currency} {totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatCurrency(totalRevenue)}
               </Text>
             </BlockStack>
             {conversionRate !== null && (
@@ -1157,101 +1130,18 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         </BlockStack>
       </Card>
 
-      <Card>
-        <BlockStack gap="400">
-          <Text as="h2" variant="headingMd">
-            Orders
-          </Text>
-          <Text as="p" variant="bodyMd" fontWeight="semibold">
-            Showing {sortedOrders.length} of {orders.length} orders
-          </Text>
-
-          <Filters
-            queryValue={queryValue}
-            filters={filters}
-            appliedFilters={appliedFilters}
-            onQueryChange={setQueryValue}
-            onQueryClear={handleQueryValueRemove}
-            onClearAll={handleFiltersClearAll}
-            queryPlaceholder="Search by order number or customer email"
-          />
-
-          <InlineStack gap="400" wrap={false}>
-            <InlineStack gap="200">
-              <TextField
-                label="Start date"
-                type="date"
-                value={startDate}
-                onChange={setStartDate}
-                autoComplete="off"
-              />
-              <TextField
-                label="End date"
-                type="date"
-                value={endDate}
-                onChange={setEndDate}
-                autoComplete="off"
-              />
-            </InlineStack>
-            <InlineStack gap="200">
-              <TextField
-                label="Start time"
-                type="time"
-                value={startTime}
-                onChange={setStartTime}
-                autoComplete="off"
-              />
-              <TextField
-                label="End time"
-                type="time"
-                value={endTime}
-                onChange={setEndTime}
-                autoComplete="off"
-              />
-            </InlineStack>
-          </InlineStack>
-
-          <div style={{ maxHeight: '50vh', overflow: 'auto' }}>
-            <IndexTable
-              resourceName={{ singular: 'order', plural: 'orders' }}
-              itemCount={sortedOrders.length}
-              headings={orderHeadings}
-              selectable={false}
-              sortable={[false, true, true, true, true, true, true, true]}
-              defaultSortDirection="descending"
-              sortDirection={sortDirection}
-              sortColumnIndex={sortColumn}
-              onSort={handleOrderSort}
-            >
-              {sortedOrders.map((order, index) => (
-                <IndexTable.Row id={order.id.toString()} key={order.id} position={index}>
-                  <IndexTable.Cell>{index + 1}</IndexTable.Cell>
-                  <IndexTable.Cell>
-                    <Link url={getOrderLink(order)} target="_blank" removeUnderline>
-                      {order.name}
-                    </Link>
-                  </IndexTable.Cell>
-                  <IndexTable.Cell>{order.email || 'N/A'}</IndexTable.Cell>
-                  <IndexTable.Cell>{formatDate(order.created_at)}</IndexTable.Cell>
-                  <IndexTable.Cell>{parseFloat(order.total_price).toFixed(2)}</IndexTable.Cell>
-                  <IndexTable.Cell>{getStatusBadge(order.financial_status)}</IndexTable.Cell>
-                  <IndexTable.Cell>{order.line_items.length}</IndexTable.Cell>
-                  <IndexTable.Cell>
-                    {order.line_items.reduce((sum, item) => sum + item.quantity, 0)}
-                  </IndexTable.Cell>
-                </IndexTable.Row>
-              ))}
-            </IndexTable>
-          </div>
-        </BlockStack>
-      </Card>
-
+      {/* Product Sales Summary Section */}
       {productSummary.length > 0 && (
         <Card>
           <BlockStack gap="400">
-            <Text as="h2" variant="headingMd">
-              Product Summary
-            </Text>
+            <InlineStack align="space-between">
+              <Text as="h2" variant="headingMd">
+                Product Sales Summary
+              </Text>
+              <Button onClick={exportToCSV}>
+                Export CSV
+              </Button>
+            </InlineStack>
             <Tabs tabs={productSummaryTabs} selected={selectedProductTab} onSelect={setSelectedProductTab}>
               {selectedProductTab === 0 ? (
                 <>
@@ -1313,7 +1203,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                           <IndexTable.Cell>{product.remainingInventory}</IndexTable.Cell>
                           <IndexTable.Cell>{product.sellThroughRate.toFixed(1)}%</IndexTable.Cell>
                           <IndexTable.Cell>
-                            {product.currency} {product.totalRevenue.toFixed(2)}
+                            {formatCurrency(product.totalRevenue)}
                           </IndexTable.Cell>
                           <IndexTable.Cell>{product.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
                         </IndexTable.Row>
@@ -1378,7 +1268,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                           <IndexTable.Cell>{product.remainingInventory}</IndexTable.Cell>
                           <IndexTable.Cell>{product.sellThroughRate.toFixed(1)}%</IndexTable.Cell>
                           <IndexTable.Cell>
-                            {product.currency} {product.totalRevenue.toFixed(2)}
+                            {formatCurrency(product.totalRevenue)}
                           </IndexTable.Cell>
                           <IndexTable.Cell>{product.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
                         </IndexTable.Row>
@@ -1391,6 +1281,51 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
           </BlockStack>
         </Card>
       )}
+
+      {/* Orders Section - Last */}
+      <Card>
+        <BlockStack gap="400">
+          <Text as="h2" variant="headingMd">
+            Orders
+          </Text>
+          <Text as="p" variant="bodyMd" fontWeight="semibold">
+            Showing {sortedOrders.length} of {orders.length} orders
+          </Text>
+
+          <div style={{ maxHeight: '50vh', overflow: 'auto' }}>
+            <IndexTable
+              resourceName={{ singular: 'order', plural: 'orders' }}
+              itemCount={sortedOrders.length}
+              headings={orderHeadings}
+              selectable={false}
+              sortable={[false, true, true, true, true, true, true, true]}
+              defaultSortDirection="descending"
+              sortDirection={sortDirection}
+              sortColumnIndex={sortColumn}
+              onSort={handleOrderSort}
+            >
+              {sortedOrders.map((order, index) => (
+                <IndexTable.Row id={order.id.toString()} key={order.id} position={index}>
+                  <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    <Link url={getOrderLink(order)} target="_blank" removeUnderline>
+                      {order.name}
+                    </Link>
+                  </IndexTable.Cell>
+                  <IndexTable.Cell>{order.email || 'N/A'}</IndexTable.Cell>
+                  <IndexTable.Cell>{formatDate(order.created_at)}</IndexTable.Cell>
+                  <IndexTable.Cell>{formatCurrency(parseFloat(order.total_price))}</IndexTable.Cell>
+                  <IndexTable.Cell>{getStatusBadge(order.financial_status)}</IndexTable.Cell>
+                  <IndexTable.Cell>{order.line_items.length}</IndexTable.Cell>
+                  <IndexTable.Cell>
+                    {order.line_items.reduce((sum, item) => sum + item.quantity, 0)}
+                  </IndexTable.Cell>
+                </IndexTable.Row>
+              ))}
+            </IndexTable>
+          </div>
+        </BlockStack>
+      </Card>
     </BlockStack>
   );
 };
