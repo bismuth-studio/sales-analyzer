@@ -13,6 +13,7 @@ import {
   Filters,
   ChoiceList,
   TextField,
+  Tabs,
 } from '@shopify/polaris';
 
 interface Order {
@@ -54,6 +55,18 @@ interface ProductSummary {
   imageUrl?: string;
 }
 
+interface AggregatedProductSummary {
+  productId: number;
+  productName: string;
+  unitsSold: number;
+  remainingInventory: number;
+  totalRevenue: number;
+  currency: string;
+  sellThroughRate: number;
+  revenuePercentage: number;
+  imageUrl?: string;
+}
+
 interface OrdersListProps {
   shop: string;
 }
@@ -71,6 +84,12 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const [productSummary, setProductSummary] = useState<ProductSummary[]>([]);
   const [productSortColumn, setProductSortColumn] = useState<number>(5); // Default to Units Sold
   const [productSortDirection, setProductSortDirection] = useState<'ascending' | 'descending'>('descending');
+
+  // Aggregated product summary (by product, not variant)
+  const [aggregatedProductSummary, setAggregatedProductSummary] = useState<AggregatedProductSummary[]>([]);
+  const [aggregatedSortColumn, setAggregatedSortColumn] = useState<number>(2); // Default to Units Sold
+  const [aggregatedSortDirection, setAggregatedSortDirection] = useState<'ascending' | 'descending'>('descending');
+  const [selectedProductTab, setSelectedProductTab] = useState<number>(0);
 
   // Filter states for Polaris Filters component
   const [queryValue, setQueryValue] = useState<string>('');
@@ -399,6 +418,78 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     generateProductSummary();
   }, [generateProductSummary]);
 
+  // Generate aggregated product summary (by product, not variant)
+  const generateAggregatedProductSummary = useCallback(() => {
+    // First, count unique variants per product from the variant-level summary
+    const variantCountByProduct = new Map<string, Set<number>>();
+    productSummary.forEach(variant => {
+      const productName = variant.productName;
+      if (!variantCountByProduct.has(productName)) {
+        variantCountByProduct.set(productName, new Set());
+      }
+      variantCountByProduct.get(productName)!.add(variant.variantId);
+    });
+
+    const productMap = new Map<string, AggregatedProductSummary & { variantCount: number }>();
+
+    filteredOrders.forEach((order) => {
+      if (!order.line_items || order.line_items.length === 0) {
+        return;
+      }
+
+      order.line_items.forEach((item) => {
+        if (!item.product_id) {
+          return;
+        }
+
+        // Use product name as key to aggregate all variants
+        const key = item.title;
+        const variantCount = variantCountByProduct.get(key)?.size || 1;
+        const totalInitialStock = 50 * variantCount;
+
+        if (productMap.has(key)) {
+          const existing = productMap.get(key)!;
+          existing.unitsSold += item.quantity;
+          existing.remainingInventory = totalInitialStock - existing.unitsSold;
+          existing.totalRevenue += parseFloat(item.price) * item.quantity;
+          existing.sellThroughRate = (existing.unitsSold / totalInitialStock) * 100;
+        } else {
+          const unitsSold = item.quantity;
+          const remainingInventory = totalInitialStock - unitsSold;
+          const sellThroughRate = (unitsSold / totalInitialStock) * 100;
+
+          productMap.set(key, {
+            productId: item.product_id,
+            productName: item.title,
+            unitsSold: unitsSold,
+            remainingInventory: remainingInventory,
+            totalRevenue: parseFloat(item.price) * item.quantity,
+            currency: order.currency,
+            sellThroughRate: sellThroughRate,
+            revenuePercentage: 0,
+            imageUrl: undefined,
+            variantCount: variantCount,
+          });
+        }
+      });
+    });
+
+    const summary = Array.from(productMap.values());
+    const totalRevenue = summary.reduce((sum, product) => sum + product.totalRevenue, 0);
+
+    summary.forEach(product => {
+      product.revenuePercentage = totalRevenue > 0 ? (product.totalRevenue / totalRevenue) * 100 : 0;
+      product.imageUrl = productImages[String(product.productId)];
+    });
+
+    setAggregatedProductSummary(summary);
+  }, [filteredOrders, productImages, productSummary]);
+
+  // Update aggregated product summary when filtered orders change
+  useEffect(() => {
+    generateAggregatedProductSummary();
+  }, [generateAggregatedProductSummary]);
+
   // Fetch product images when orders are loaded
   useEffect(() => {
     if (orders.length > 0 && shop) {
@@ -644,6 +735,74 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     setProductSortColumn(index);
     setProductSortDirection(direction);
   };
+
+  // Sort aggregated product summary
+  const sortedAggregatedProductSummary = [...aggregatedProductSummary].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+    const direction = aggregatedSortDirection;
+
+    switch (aggregatedSortColumn) {
+      case 0: // Row index (not sortable)
+        return 0;
+      case 1: // Image (not sortable)
+        return 0;
+      case 2: // Product name
+        aValue = a.productName.toLowerCase();
+        bValue = b.productName.toLowerCase();
+        break;
+      case 3: // Units sold
+        aValue = a.unitsSold;
+        bValue = b.unitsSold;
+        break;
+      case 4: // Remaining inventory
+        aValue = a.remainingInventory;
+        bValue = b.remainingInventory;
+        break;
+      case 5: // Sell-Through Rate
+        aValue = a.sellThroughRate;
+        bValue = b.sellThroughRate;
+        break;
+      case 6: // Total revenue
+        aValue = a.totalRevenue;
+        bValue = b.totalRevenue;
+        break;
+      case 7: // Revenue percentage
+        aValue = a.revenuePercentage;
+        bValue = b.revenuePercentage;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+    return 0;
+  });
+
+  // Column headings for Aggregated Product Summary table (By Product)
+  const aggregatedProductHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Image' },
+    { title: 'Product Name' },
+    { title: 'Units Sold' },
+    { title: 'Remaining Inventory' },
+    { title: 'Sell-Through Rate' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Aggregated Product Summary table
+  const handleAggregatedProductSort = (index: number, direction: 'ascending' | 'descending') => {
+    setAggregatedSortColumn(index);
+    setAggregatedSortDirection(direction);
+  };
+
+  // Tabs for Product Summary section
+  const productSummaryTabs = [
+    { id: 'by-variant', content: 'By Variant' },
+    { id: 'by-product', content: 'By Product' },
+  ];
 
   const filters = [
     {
@@ -1093,72 +1252,142 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             <Text as="h2" variant="headingMd">
               Product Summary
             </Text>
-            <Text as="p" variant="bodyMd" fontWeight="semibold">
-              {productSummary.length} products from {sortedOrders.length} orders
-            </Text>
-
-            <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
-              <IndexTable
-                resourceName={{ singular: 'product', plural: 'products' }}
-                itemCount={sortedProductSummary.length}
-                headings={productHeadings}
-                selectable={false}
-                sortable={[false, false, true, true, true, true, true, true, true, true, true]}
-                defaultSortDirection="descending"
-                sortDirection={productSortDirection}
-                sortColumnIndex={productSortColumn}
-                onSort={handleProductSort}
-              >
-                {sortedProductSummary.map((product, index) => (
-                  <IndexTable.Row
-                    id={`${product.productId}-${product.variantId}`}
-                    key={`${product.productId}-${product.variantId}`}
-                    position={index}
-                  >
-                    <IndexTable.Cell>{index + 1}</IndexTable.Cell>
-                    <IndexTable.Cell>
-                      {product.imageUrl ? (
-                        <img
-                          src={product.imageUrl}
-                          alt={product.productName}
-                          style={{
-                            width: '80px',
-                            height: '80px',
-                            objectFit: 'cover',
-                            borderRadius: '4px'
-                          }}
-                        />
-                      ) : (
-                        <div style={{
-                          width: '80px',
-                          height: '80px',
-                          backgroundColor: '#f0f0f0',
-                          borderRadius: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '12px',
-                          color: '#999'
-                        }}>
-                          No image
-                        </div>
-                      )}
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>{product.productName}</IndexTable.Cell>
-                    <IndexTable.Cell>{product.color || 'N/A'}</IndexTable.Cell>
-                    <IndexTable.Cell>{product.size || 'N/A'}</IndexTable.Cell>
-                    <IndexTable.Cell>{product.sku || 'N/A'}</IndexTable.Cell>
-                    <IndexTable.Cell>{product.unitsSold}</IndexTable.Cell>
-                    <IndexTable.Cell>{product.remainingInventory}</IndexTable.Cell>
-                    <IndexTable.Cell>{product.sellThroughRate.toFixed(1)}%</IndexTable.Cell>
-                    <IndexTable.Cell>
-                      {product.currency} {product.totalRevenue.toFixed(2)}
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>{product.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
-            </div>
+            <Tabs tabs={productSummaryTabs} selected={selectedProductTab} onSelect={setSelectedProductTab}>
+              {selectedProductTab === 0 ? (
+                <>
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">
+                    {productSummary.length} variants from {sortedOrders.length} orders
+                  </Text>
+                  <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                    <IndexTable
+                      resourceName={{ singular: 'product', plural: 'products' }}
+                      itemCount={sortedProductSummary.length}
+                      headings={productHeadings}
+                      selectable={false}
+                      sortable={[false, false, true, true, true, true, true, true, true, true, true]}
+                      defaultSortDirection="descending"
+                      sortDirection={productSortDirection}
+                      sortColumnIndex={productSortColumn}
+                      onSort={handleProductSort}
+                    >
+                      {sortedProductSummary.map((product, index) => (
+                        <IndexTable.Row
+                          id={`${product.productId}-${product.variantId}`}
+                          key={`${product.productId}-${product.variantId}`}
+                          position={index}
+                        >
+                          <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {product.imageUrl ? (
+                              <img
+                                src={product.imageUrl}
+                                alt={product.productName}
+                                style={{
+                                  width: '80px',
+                                  height: '80px',
+                                  objectFit: 'cover',
+                                  borderRadius: '4px'
+                                }}
+                              />
+                            ) : (
+                              <div style={{
+                                width: '80px',
+                                height: '80px',
+                                backgroundColor: '#f0f0f0',
+                                borderRadius: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '12px',
+                                color: '#999'
+                              }}>
+                                No image
+                              </div>
+                            )}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{product.productName}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.color || 'N/A'}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.size || 'N/A'}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.sku || 'N/A'}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.unitsSold}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.remainingInventory}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.sellThroughRate.toFixed(1)}%</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {product.currency} {product.totalRevenue.toFixed(2)}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{product.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">
+                    {aggregatedProductSummary.length} products from {sortedOrders.length} orders
+                  </Text>
+                  <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                    <IndexTable
+                      resourceName={{ singular: 'product', plural: 'products' }}
+                      itemCount={sortedAggregatedProductSummary.length}
+                      headings={aggregatedProductHeadings}
+                      selectable={false}
+                      sortable={[false, false, true, true, true, true, true, true]}
+                      defaultSortDirection="descending"
+                      sortDirection={aggregatedSortDirection}
+                      sortColumnIndex={aggregatedSortColumn}
+                      onSort={handleAggregatedProductSort}
+                    >
+                      {sortedAggregatedProductSummary.map((product, index) => (
+                        <IndexTable.Row
+                          id={`${product.productId}`}
+                          key={`${product.productId}`}
+                          position={index}
+                        >
+                          <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {product.imageUrl ? (
+                              <img
+                                src={product.imageUrl}
+                                alt={product.productName}
+                                style={{
+                                  width: '80px',
+                                  height: '80px',
+                                  objectFit: 'cover',
+                                  borderRadius: '4px'
+                                }}
+                              />
+                            ) : (
+                              <div style={{
+                                width: '80px',
+                                height: '80px',
+                                backgroundColor: '#f0f0f0',
+                                borderRadius: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '12px',
+                                color: '#999'
+                              }}>
+                                No image
+                              </div>
+                            )}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{product.productName}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.unitsSold}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.remainingInventory}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.sellThroughRate.toFixed(1)}%</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {product.currency} {product.totalRevenue.toFixed(2)}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{product.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
+                  </div>
+                </>
+              )}
+            </Tabs>
           </BlockStack>
         </Card>
       )}
