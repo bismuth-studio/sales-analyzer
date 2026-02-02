@@ -14,7 +14,6 @@ import {
   Button,
   TextField,
   FormLayout,
-  Select,
 } from '@shopify/polaris';
 
 interface Order {
@@ -116,11 +115,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
   // Filter state (only used when no drop time range is provided)
   const isExploreMode = !dropStartTime && !dropEndTime;
-  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const today = new Date().toISOString().split('T')[0];
+  const [filterStartDate, setFilterStartDate] = useState<string>(today);
   const [filterStartTime, setFilterStartTime] = useState<string>('00:00');
-  const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>(today);
   const [filterEndTime, setFilterEndTime] = useState<string>('23:59');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
 
   useEffect(() => {
     if (!shop) {
@@ -133,7 +132,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
   useEffect(() => {
     applyFilters();
-  }, [orders, dropStartTime, dropEndTime, filterStartDate, filterStartTime, filterEndDate, filterEndTime, filterStatus]);
+  }, [orders, dropStartTime, dropEndTime, filterStartDate, filterStartTime, filterEndDate, filterEndTime]);
 
   useEffect(() => {
     if (filteredOrders.length >= 0) {
@@ -163,9 +162,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       if (filterEndDate) {
         const endDateTime = new Date(`${filterEndDate}T${filterEndTime}`);
         filtered = filtered.filter(order => new Date(order.created_at) <= endDateTime);
-      }
-      if (filterStatus && filterStatus !== 'all') {
-        filtered = filtered.filter(order => order.financial_status === filterStatus);
       }
     }
 
@@ -912,23 +908,75 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     document.body.removeChild(link);
   };
 
-  // Status filter options
-  const statusOptions = [
-    { label: 'All Statuses', value: 'all' },
-    { label: 'Paid', value: 'paid' },
-    { label: 'Pending', value: 'pending' },
-    { label: 'Authorized', value: 'authorized' },
-    { label: 'Refunded', value: 'refunded' },
-    { label: 'Voided', value: 'voided' },
-  ];
+  // Quick date preset functions
+  const setPresetToday = () => {
+    const today = new Date().toISOString().split('T')[0];
+    setFilterStartDate(today);
+    setFilterStartTime('00:00');
+    setFilterEndDate(today);
+    setFilterEndTime('23:59');
+  };
 
-  // Clear filters function
-  const clearFilters = () => {
+  const setPresetYesterday = () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    setFilterStartDate(yesterdayStr);
+    setFilterStartTime('00:00');
+    setFilterEndDate(yesterdayStr);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetThisWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - dayOfWeek); // Sunday
+    const today = now.toISOString().split('T')[0];
+    setFilterStartDate(startOfWeek.toISOString().split('T')[0]);
+    setFilterStartTime('00:00');
+    setFilterEndDate(today);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetLastWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const startOfLastWeek = new Date(now);
+    startOfLastWeek.setDate(now.getDate() - dayOfWeek - 7); // Last Sunday
+    const endOfLastWeek = new Date(startOfLastWeek);
+    endOfLastWeek.setDate(startOfLastWeek.getDate() + 6); // Last Saturday
+    setFilterStartDate(startOfLastWeek.toISOString().split('T')[0]);
+    setFilterStartTime('00:00');
+    setFilterEndDate(endOfLastWeek.toISOString().split('T')[0]);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetThisMonth = () => {
+    const now = new Date();
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const today = now.toISOString().split('T')[0];
+    setFilterStartDate(firstOfMonth.toISOString().split('T')[0]);
+    setFilterStartTime('00:00');
+    setFilterEndDate(today);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetLastMonth = () => {
+    const now = new Date();
+    const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    setFilterStartDate(firstOfLastMonth.toISOString().split('T')[0]);
+    setFilterStartTime('00:00');
+    setFilterEndDate(lastOfLastMonth.toISOString().split('T')[0]);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetAll = () => {
     setFilterStartDate('');
     setFilterStartTime('00:00');
     setFilterEndDate('');
     setFilterEndTime('23:59');
-    setFilterStatus('all');
   };
 
   return (
@@ -941,13 +989,30 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
               <Text as="h2" variant="headingMd">
                 Explore Orders
               </Text>
-              <Button onClick={clearFilters} variant="plain">
-                Clear Filters
-              </Button>
+              <InlineStack gap="200">
+                <Button onClick={setPresetToday} size="slim" variant={filterStartDate === new Date().toISOString().split('T')[0] && filterEndDate === new Date().toISOString().split('T')[0] ? 'primary' : 'secondary'}>
+                  Today
+                </Button>
+                <Button onClick={setPresetYesterday} size="slim">
+                  Yesterday
+                </Button>
+                <Button onClick={setPresetThisWeek} size="slim">
+                  This Week
+                </Button>
+                <Button onClick={setPresetLastWeek} size="slim">
+                  Last Week
+                </Button>
+                <Button onClick={setPresetThisMonth} size="slim">
+                  This Month
+                </Button>
+                <Button onClick={setPresetLastMonth} size="slim">
+                  Last Month
+                </Button>
+                <Button onClick={setPresetAll} size="slim">
+                  All
+                </Button>
+              </InlineStack>
             </InlineStack>
-            <Text as="p" variant="bodySm" tone="subdued">
-              Filter orders by date range to explore your sales data before creating a drop.
-            </Text>
             <FormLayout>
               <FormLayout.Group>
                 <TextField
@@ -979,12 +1044,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
                   autoComplete="off"
                 />
               </FormLayout.Group>
-              <Select
-                label="Payment Status"
-                options={statusOptions}
-                value={filterStatus}
-                onChange={setFilterStatus}
-              />
             </FormLayout>
             {onCreateDrop && filterStartDate && filterEndDate && (
               <InlineStack align="end">
