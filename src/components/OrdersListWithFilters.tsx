@@ -70,9 +70,11 @@ interface AggregatedProductSummary {
 
 interface OrdersListProps {
   shop: string;
+  dropStartTime?: string;
+  dropEndTime?: string;
 }
 
-const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
+const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime, dropEndTime }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -92,8 +94,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const [aggregatedSortDirection, setAggregatedSortDirection] = useState<'ascending' | 'descending'>('descending');
   const [selectedProductTab, setSelectedProductTab] = useState<number>(0);
 
-  // Filter states
-  const [dateRange, setDateRange] = useState<string[]>(['today']);
+  // Filter states - if drop time is provided, don't default to 'today'
+  const [dateRange, setDateRange] = useState<string[]>(dropStartTime ? [] : ['today']);
   const [orderStatus, setOrderStatus] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
@@ -152,7 +154,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
   useEffect(() => {
     applyFilters();
-  }, [orders, dateRange, orderStatus, selectedTags, startDate, endDate, minPrice, maxPrice, startTime, endTime]);
+  }, [orders, dateRange, orderStatus, selectedTags, startDate, endDate, minPrice, maxPrice, startTime, endTime, dropStartTime, dropEndTime]);
 
   useEffect(() => {
     if (filteredOrders.length >= 0) {
@@ -162,6 +164,16 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
   const applyFilters = () => {
     let filtered = [...orders];
+
+    // Apply drop time range filter (from drop definition)
+    if (dropStartTime) {
+      const dropStart = new Date(dropStartTime);
+      filtered = filtered.filter(order => new Date(order.created_at) >= dropStart);
+    }
+    if (dropEndTime) {
+      const dropEnd = new Date(dropEndTime);
+      filtered = filtered.filter(order => new Date(order.created_at) <= dropEnd);
+    }
 
     // Apply tag filter
     if (selectedTags.length > 0) {
