@@ -14,6 +14,7 @@ import {
 import { PlusIcon } from '@shopify/polaris-icons';
 import { useNavigate } from 'react-router-dom';
 import DropModal from './DropModal';
+import OrdersListWithFilters from './OrdersListWithFilters';
 
 interface Drop {
   id: string;
@@ -40,6 +41,12 @@ function Dashboard({ shop }: DashboardProps) {
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDrop, setEditingDrop] = useState<Drop | null>(null);
+  const [initialDropValues, setInitialDropValues] = useState<{
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+  } | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('start_time');
   const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
 
@@ -121,6 +128,13 @@ function Dashboard({ shop }: DashboardProps) {
 
   const handleCreateDrop = () => {
     setEditingDrop(null);
+    setInitialDropValues(null);
+    setModalOpen(true);
+  };
+
+  const handleCreateDropFromExplorer = (startDate: string, startTime: string, endDate: string, endTime: string) => {
+    setEditingDrop(null);
+    setInitialDropValues({ startDate, startTime, endDate, endTime });
     setModalOpen(true);
   };
 
@@ -138,6 +152,7 @@ function Dashboard({ shop }: DashboardProps) {
   const handleModalClose = () => {
     setModalOpen(false);
     setEditingDrop(null);
+    setInitialDropValues(null);
   };
 
   const handleDropSaved = (drop: Drop, isNew: boolean) => {
@@ -225,8 +240,7 @@ function Dashboard({ shop }: DashboardProps) {
           <InlineStack gap="200">
             <Button
               size="slim"
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={() => {
                 handleEditDrop(drop);
               }}
             >
@@ -235,8 +249,7 @@ function Dashboard({ shop }: DashboardProps) {
             <Button
               size="slim"
               tone="critical"
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={() => {
                 if (confirm('Are you sure you want to delete this drop?')) {
                   handleDeleteDrop(drop.id);
                 }
@@ -310,7 +323,11 @@ function Dashboard({ shop }: DashboardProps) {
         onSave={handleDropSaved}
         shop={shop}
         editingDrop={editingDrop}
+        initialValues={initialDropValues}
       />
+
+      {/* Order Explorer Section */}
+      <OrdersListWithFilters shop={shop} onCreateDrop={handleCreateDropFromExplorer} />
     </BlockStack>
   );
 }

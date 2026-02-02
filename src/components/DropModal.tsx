@@ -27,6 +27,12 @@ interface DropModalProps {
   onSave: (drop: Drop, isNew: boolean) => void;
   shop: string;
   editingDrop: Drop | null;
+  initialValues?: {
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+  } | null;
 }
 
 interface Collection {
@@ -34,7 +40,7 @@ interface Collection {
   title: string;
 }
 
-function DropModal({ open, onClose, onSave, shop, editingDrop }: DropModalProps) {
+function DropModal({ open, onClose, onSave, shop, editingDrop, initialValues }: DropModalProps) {
   const [title, setTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -78,6 +84,14 @@ function DropModal({ open, onClose, onSave, shop, editingDrop }: DropModalProps)
         setEndDate(end.toISOString().split('T')[0]);
         setEndTime(end.toTimeString().slice(0, 5));
         setCollectionId(editingDrop.collection_id || '');
+      } else if (initialValues) {
+        // Use values from explorer
+        setTitle('');
+        setStartDate(initialValues.startDate);
+        setStartTime(initialValues.startTime);
+        setEndDate(initialValues.endDate);
+        setEndTime(initialValues.endTime);
+        setCollectionId('');
       } else {
         // Default to today for new drops
         const now = new Date();
@@ -91,7 +105,7 @@ function DropModal({ open, onClose, onSave, shop, editingDrop }: DropModalProps)
       }
       setError(null);
     }
-  }, [open, editingDrop]);
+  }, [open, editingDrop, initialValues]);
 
   const handleSave = useCallback(async () => {
     if (!title.trim()) {

@@ -12,6 +12,9 @@ import {
   Link,
   Tabs,
   Button,
+  TextField,
+  FormLayout,
+  Select,
 } from '@shopify/polaris';
 
 interface Order {
@@ -52,6 +55,7 @@ interface ProductSummary {
   sellThroughRate: number;
   revenuePercentage: number;
   imageUrl?: string;
+  soldOutAt?: string; // Timestamp when variant sold out (reached 50 units)
 }
 
 interface AggregatedProductSummary {
@@ -79,9 +83,10 @@ interface OrdersListProps {
   shop: string;
   dropStartTime?: string;
   dropEndTime?: string;
+  onCreateDrop?: (startDate: string, startTime: string, endDate: string, endTime: string) => void;
 }
 
-const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime, dropEndTime }) => {
+const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime, dropEndTime, onCreateDrop }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -109,6 +114,14 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
   // Product images state (keys can be numbers or strings from JSON)
   const [productImages, setProductImages] = useState<{ [key: string]: string }>({});
 
+  // Filter state (only used when no drop time range is provided)
+  const isExploreMode = !dropStartTime && !dropEndTime;
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterStartTime, setFilterStartTime] = useState<string>('00:00');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [filterEndTime, setFilterEndTime] = useState<string>('23:59');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+
   useEffect(() => {
     if (!shop) {
       setLoading(false);
@@ -120,7 +133,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
   useEffect(() => {
     applyFilters();
-  }, [orders, dropStartTime, dropEndTime]);
+  }, [orders, dropStartTime, dropEndTime, filterStartDate, filterStartTime, filterEndDate, filterEndTime, filterStatus]);
 
   useEffect(() => {
     if (filteredOrders.length >= 0) {
@@ -139,6 +152,21 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     if (dropEndTime) {
       const dropEnd = new Date(dropEndTime);
       filtered = filtered.filter(order => new Date(order.created_at) <= dropEnd);
+    }
+
+    // Apply manual filters (explore mode on dashboard)
+    if (isExploreMode) {
+      if (filterStartDate) {
+        const startDateTime = new Date(`${filterStartDate}T${filterStartTime}`);
+        filtered = filtered.filter(order => new Date(order.created_at) >= startDateTime);
+      }
+      if (filterEndDate) {
+        const endDateTime = new Date(`${filterEndDate}T${filterEndTime}`);
+        filtered = filtered.filter(order => new Date(order.created_at) <= endDateTime);
+      }
+      if (filterStatus && filterStatus !== 'all') {
+        filtered = filtered.filter(order => order.financial_status === filterStatus);
+      }
     }
 
     setFilteredOrders(filtered);
@@ -201,9 +229,14 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
   // Generate product summary from filtered orders
   const generateProductSummary = useCallback(() => {
-    const productMap = new Map<string, ProductSummary>();
+    const productMap = new Map<string, ProductSummary & { runningTotal: number }>();
 
-    filteredOrders.forEach((order) => {
+    // Sort orders by time to track when variants sold out
+    const sortedByTime = [...filteredOrders].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+    sortedByTime.forEach((order) => {
       if (!order.line_items || order.line_items.length === 0) {
         return;
       }
@@ -229,16 +262,23 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
         if (productMap.has(key)) {
           const existing = productMap.get(key)!;
-          existing.unitsSold += item.quantity;
+          const previousTotal = existing.runningTotal;
+          existing.runningTotal += item.quantity;
+          existing.unitsSold = existing.runningTotal;
           existing.remainingInventory = 50 - existing.unitsSold;
           existing.totalRevenue += parseFloat(item.price) * item.quantity;
           existing.sellThroughRate = (existing.unitsSold / 50) * 100;
+
+          // Check if this order caused the variant to sell out
+          if (previousTotal < 50 && existing.runningTotal >= 50 && !existing.soldOutAt) {
+            existing.soldOutAt = order.created_at;
+          }
         } else {
           const unitsSold = item.quantity;
           const remainingInventory = 50 - unitsSold;
           const sellThroughRate = (unitsSold / 50) * 100;
 
-          productMap.set(key, {
+          const entry: ProductSummary & { runningTotal: number } = {
             productId: item.product_id,
             variantId: item.variant_id,
             productName: item.title,
@@ -251,19 +291,22 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
             totalRevenue: parseFloat(item.price) * item.quantity,
             currency: order.currency,
             sellThroughRate: sellThroughRate,
-            revenuePercentage: 0, // Will be calculated below
+            revenuePercentage: 0,
             imageUrl: undefined,
-          });
+            runningTotal: unitsSold,
+            soldOutAt: unitsSold >= 50 ? order.created_at : undefined,
+          };
+
+          productMap.set(key, entry);
         }
       });
     });
 
     // Calculate total revenue from all products
-    const summary = Array.from(productMap.values());
+    const summary = Array.from(productMap.values()).map(({ runningTotal, ...rest }) => rest);
     const totalRevenue = summary.reduce((sum, product) => sum + product.totalRevenue, 0);
 
     // Update revenue percentage and image URL for each product
-    // Note: JSON keys are strings, so we look up by string key
     summary.forEach(product => {
       product.revenuePercentage = totalRevenue > 0 ? (product.totalRevenue / totalRevenue) * 100 : 0;
       product.imageUrl = productImages[String(product.productId)];
@@ -490,6 +533,33 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const formatDuration = (startTime: string, endTime: string) => {
+    const start = new Date(startTime).getTime();
+    const end = new Date(endTime).getTime();
+    const durationMs = end - start;
+
+    if (durationMs < 0) return 'N/A';
+
+    const seconds = Math.floor(durationMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) {
+      const remainingHours = hours % 24;
+      return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+    }
+    if (hours > 0) {
+      const remainingMinutes = minutes % 60;
+      return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+    }
+    if (minutes > 0) {
+      const remainingSeconds = seconds % 60;
+      return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+    }
+    return `${seconds}s`;
   };
 
   const getStatusBadge = (status: string) => {
@@ -842,8 +912,94 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     document.body.removeChild(link);
   };
 
+  // Status filter options
+  const statusOptions = [
+    { label: 'All Statuses', value: 'all' },
+    { label: 'Paid', value: 'paid' },
+    { label: 'Pending', value: 'pending' },
+    { label: 'Authorized', value: 'authorized' },
+    { label: 'Refunded', value: 'refunded' },
+    { label: 'Voided', value: 'voided' },
+  ];
+
+  // Clear filters function
+  const clearFilters = () => {
+    setFilterStartDate('');
+    setFilterStartTime('00:00');
+    setFilterEndDate('');
+    setFilterEndTime('23:59');
+    setFilterStatus('all');
+  };
+
   return (
     <BlockStack gap="400">
+      {/* Filters Section (only in explore mode) */}
+      {isExploreMode && (
+        <Card>
+          <BlockStack gap="400">
+            <InlineStack align="space-between">
+              <Text as="h2" variant="headingMd">
+                Explore Orders
+              </Text>
+              <Button onClick={clearFilters} variant="plain">
+                Clear Filters
+              </Button>
+            </InlineStack>
+            <Text as="p" variant="bodySm" tone="subdued">
+              Filter orders by date range to explore your sales data before creating a drop.
+            </Text>
+            <FormLayout>
+              <FormLayout.Group>
+                <TextField
+                  label="Start Date"
+                  type="date"
+                  value={filterStartDate}
+                  onChange={setFilterStartDate}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="Start Time"
+                  type="time"
+                  value={filterStartTime}
+                  onChange={setFilterStartTime}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="End Date"
+                  type="date"
+                  value={filterEndDate}
+                  onChange={setFilterEndDate}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="End Time"
+                  type="time"
+                  value={filterEndTime}
+                  onChange={setFilterEndTime}
+                  autoComplete="off"
+                />
+              </FormLayout.Group>
+              <Select
+                label="Payment Status"
+                options={statusOptions}
+                value={filterStatus}
+                onChange={setFilterStatus}
+              />
+            </FormLayout>
+            {onCreateDrop && filterStartDate && filterEndDate && (
+              <InlineStack align="end">
+                <Button
+                  variant="primary"
+                  onClick={() => onCreateDrop(filterStartDate, filterStartTime, filterEndDate, filterEndTime)}
+                >
+                  Create Drop from Selection
+                </Button>
+              </InlineStack>
+            )}
+          </BlockStack>
+        </Card>
+      )}
+
       {/* Summary Metrics Section */}
       <Card>
         <BlockStack gap="400">
@@ -960,8 +1116,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
         </BlockStack>
       </Card>
 
-      {/* Sold Out Variants Section */}
-      {sortedProductSummary.filter(p => p.remainingInventory <= 0).length > 0 && (
+      {/* Sold Out Variants Section (only in drop analysis mode) */}
+      {!isExploreMode && sortedProductSummary.filter(p => p.remainingInventory <= 0).length > 0 && (
         <Card>
           <BlockStack gap="400">
             <InlineStack gap="200" align="start" blockAlign="center">
@@ -1024,6 +1180,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
                       <Text as="p" variant="bodySm" tone="critical">
                         {product.unitsSold} sold (100%)
                       </Text>
+                      {product.soldOutAt && dropStartTime && (
+                        <Text as="p" variant="bodySm" tone="success">
+                          Sold out in {formatDuration(dropStartTime, product.soldOutAt)}
+                        </Text>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1032,8 +1193,8 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
         </Card>
       )}
 
-      {/* Product Sales Summary Section */}
-      {productSummary.length > 0 && (
+      {/* Product Sales Summary Section (only in drop analysis mode) */}
+      {!isExploreMode && productSummary.length > 0 && (
         <Card>
           <BlockStack gap="400">
             <InlineStack align="space-between">
