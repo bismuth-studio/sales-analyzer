@@ -196,6 +196,58 @@ router.post('/product-images', async (req: Request, res: Response) => {
   }
 });
 
+// Get all collections from the store
+router.get('/collections', async (req: Request, res: Response) => {
+  try {
+    const shop = req.query.shop as string;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    const session = getSession(shop);
+
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const client = new shopify.clients.Rest({ session });
+
+    // Fetch both smart collections and custom collections
+    const [smartCollectionsResponse, customCollectionsResponse] = await Promise.all([
+      client.get({ path: 'smart_collections', query: { limit: '250' } }).catch(() => ({ body: { smart_collections: [] } })),
+      client.get({ path: 'custom_collections', query: { limit: '250' } }).catch(() => ({ body: { custom_collections: [] } })),
+    ]);
+
+    const smartCollections = ((smartCollectionsResponse.body as any).smart_collections || []).map((c: any) => ({
+      id: String(c.id),
+      title: c.title,
+      type: 'smart',
+    }));
+
+    const customCollections = ((customCollectionsResponse.body as any).custom_collections || []).map((c: any) => ({
+      id: String(c.id),
+      title: c.title,
+      type: 'custom',
+    }));
+
+    const allCollections = [...smartCollections, ...customCollections].sort((a, b) =>
+      a.title.localeCompare(b.title)
+    );
+
+    res.json({
+      success: true,
+      collections: allCollections,
+    });
+  } catch (error: any) {
+    console.error('Error fetching collections:', error);
+    res.status(500).json({
+      error: 'Failed to fetch collections',
+      message: error.message,
+    });
+  }
+});
+
 // Get analytics data (sessions for conversion rate)
 // Note: ShopifyQL analytics requires specific API access that may not be available for all stores
 router.get('/analytics', async (req: Request, res: Response) => {

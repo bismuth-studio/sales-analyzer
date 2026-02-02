@@ -42,8 +42,29 @@ function DropModal({ open, onClose, onSave, shop, editingDrop }: DropModalProps)
   const [endTime, setEndTime] = useState('');
   const [collectionId, setCollectionId] = useState<string>('');
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [collectionsLoading, setCollectionsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Fetch collections when modal opens
+  useEffect(() => {
+    if (open && shop && collections.length === 0) {
+      setCollectionsLoading(true);
+      fetch(`/api/orders/collections?shop=${encodeURIComponent(shop)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.collections) {
+            setCollections(data.collections);
+          }
+        })
+        .catch(err => {
+          console.error('Error fetching collections:', err);
+        })
+        .finally(() => {
+          setCollectionsLoading(false);
+        });
+    }
+  }, [open, shop, collections.length]);
 
   // Reset form when modal opens/closes or editingDrop changes
   useEffect(() => {
@@ -206,7 +227,8 @@ function DropModal({ open, onClose, onSave, shop, editingDrop }: DropModalProps)
               options={collectionOptions}
               value={collectionId}
               onChange={setCollectionId}
-              helpText="Filter analysis to a specific collection"
+              helpText={collectionsLoading ? 'Loading collections...' : 'Filter analysis to a specific collection'}
+              disabled={collectionsLoading}
             />
           </FormLayout>
 

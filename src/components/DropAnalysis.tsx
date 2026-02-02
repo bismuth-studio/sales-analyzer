@@ -9,9 +9,11 @@ import {
   Banner,
   InlineStack,
   Badge,
+  Button,
 } from '@shopify/polaris';
-import { ArrowLeftIcon } from '@shopify/polaris-icons';
+import { EditIcon } from '@shopify/polaris-icons';
 import OrdersListWithFilters from './OrdersListWithFilters';
+import DropModal from './DropModal';
 
 interface Drop {
   id: string;
@@ -35,6 +37,7 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
   const [drop, setDrop] = useState<Drop | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   useEffect(() => {
     if (!dropId) {
@@ -80,6 +83,11 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
       minute: '2-digit',
       hour12: true,
     });
+  };
+
+  const handleDropSaved = (updatedDrop: Drop) => {
+    setDrop(updatedDrop);
+    setEditModalOpen(false);
   };
 
   const getDropStatus = (drop: Drop): { status: 'success' | 'attention' | 'info'; label: string } => {
@@ -132,20 +140,38 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
       <div style={{ paddingLeft: '5%', paddingRight: '5%' }}>
         <BlockStack gap="400">
           <Card>
-            <BlockStack gap="200">
-              <InlineStack gap="400" align="start">
+            <BlockStack gap="300">
+              <InlineStack align="space-between">
+                <Text as="h2" variant="headingMd">Drop Details</Text>
+                <Button icon={EditIcon} onClick={() => setEditModalOpen(true)}>
+                  Edit Drop
+                </Button>
+              </InlineStack>
+              <InlineStack gap="800" align="start" wrap>
                 <BlockStack gap="100">
-                  <Text as="span" variant="bodySm" tone="subdued">Time Range</Text>
-                  <Text as="span" variant="bodyMd">
-                    {formatDateTime(drop.start_time)} — {formatDateTime(drop.end_time)}
-                  </Text>
+                  <Text as="span" variant="bodySm" tone="subdued">Title</Text>
+                  <Text as="span" variant="bodyMd" fontWeight="semibold">{drop.title}</Text>
                 </BlockStack>
-                {drop.collection_title && (
-                  <BlockStack gap="100">
-                    <Text as="span" variant="bodySm" tone="subdued">Collection</Text>
-                    <Text as="span" variant="bodyMd">{drop.collection_title}</Text>
-                  </BlockStack>
-                )}
+                <BlockStack gap="100">
+                  <Text as="span" variant="bodySm" tone="subdued">Start Time</Text>
+                  <Text as="span" variant="bodyMd">{formatDateTime(drop.start_time)}</Text>
+                </BlockStack>
+                <BlockStack gap="100">
+                  <Text as="span" variant="bodySm" tone="subdued">End Time</Text>
+                  <Text as="span" variant="bodyMd">{formatDateTime(drop.end_time)}</Text>
+                </BlockStack>
+                <BlockStack gap="100">
+                  <Text as="span" variant="bodySm" tone="subdued">Collection</Text>
+                  <Text as="span" variant="bodyMd">{drop.collection_title || 'All products'}</Text>
+                </BlockStack>
+                <BlockStack gap="100">
+                  <Text as="span" variant="bodySm" tone="subdued">Status</Text>
+                  <Badge tone={status.status}>{status.label}</Badge>
+                </BlockStack>
+                <BlockStack gap="100">
+                  <Text as="span" variant="bodySm" tone="subdued">Created</Text>
+                  <Text as="span" variant="bodyMd">{formatDateTime(drop.created_at)}</Text>
+                </BlockStack>
               </InlineStack>
             </BlockStack>
           </Card>
@@ -157,6 +183,14 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
           />
         </BlockStack>
       </div>
+
+      <DropModal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        onSave={handleDropSaved}
+        shop={shop}
+        editingDrop={drop}
+      />
     </Page>
   );
 }
