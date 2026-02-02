@@ -93,6 +93,15 @@ interface VendorSummary {
   revenuePercentage: number;
 }
 
+interface ColorSummary {
+  color: string;
+  variantCount: number;
+  unitsSold: number;
+  totalRevenue: number;
+  currency: string;
+  revenuePercentage: number;
+}
+
 interface OrdersListProps {
   shop: string;
   dropStartTime?: string;
@@ -125,6 +134,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
   const [vendorSummary, setVendorSummary] = useState<VendorSummary[]>([]);
   const [vendorSortColumn, setVendorSortColumn] = useState<number>(2); // Default to Units Sold
   const [vendorSortDirection, setVendorSortDirection] = useState<'ascending' | 'descending'>('descending');
+
+  // Color summary (by color)
+  const [colorSummary, setColorSummary] = useState<ColorSummary[]>([]);
+  const [colorSortColumn, setColorSortColumn] = useState<number>(2); // Default to Units Sold
+  const [colorSortDirection, setColorSortDirection] = useState<'ascending' | 'descending'>('descending');
 
   // Product images state (keys can be numbers or strings from JSON)
   const [productImages, setProductImages] = useState<{ [key: string]: string }>({});
@@ -560,6 +574,71 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     generateVendorSummary();
   }, [generateVendorSummary]);
 
+  // Generate color summary (by color)
+  const generateColorSummary = useCallback(() => {
+    const colorMap = new Map<string, ColorSummary & { variantIds: Set<number> }>();
+
+    filteredOrders.forEach((order) => {
+      if (!order.line_items || order.line_items.length === 0) {
+        return;
+      }
+
+      order.line_items.forEach((item) => {
+        // Parse color from variant_title (format: "Color / Size")
+        let color = 'Unknown';
+        if (item.variant_title) {
+          const parts = item.variant_title.split('/').map(part => part.trim());
+          color = parts[0] || 'Unknown';
+        }
+
+        if (colorMap.has(color)) {
+          const existing = colorMap.get(color)!;
+          existing.unitsSold += item.quantity;
+          existing.totalRevenue += parseFloat(item.price) * item.quantity;
+          if (item.variant_id) {
+            existing.variantIds.add(item.variant_id);
+          }
+        } else {
+          const variantIds = new Set<number>();
+          if (item.variant_id) {
+            variantIds.add(item.variant_id);
+          }
+
+          colorMap.set(color, {
+            color,
+            variantCount: 0,
+            unitsSold: item.quantity,
+            totalRevenue: parseFloat(item.price) * item.quantity,
+            currency: order.currency,
+            revenuePercentage: 0,
+            variantIds,
+          });
+        }
+      });
+    });
+
+    const summary = Array.from(colorMap.values()).map(c => ({
+      color: c.color,
+      variantCount: c.variantIds.size,
+      unitsSold: c.unitsSold,
+      totalRevenue: c.totalRevenue,
+      currency: c.currency,
+      revenuePercentage: 0,
+    }));
+
+    const totalRevenue = summary.reduce((sum, c) => sum + c.totalRevenue, 0);
+    summary.forEach(c => {
+      c.revenuePercentage = totalRevenue > 0 ? (c.totalRevenue / totalRevenue) * 100 : 0;
+    });
+
+    setColorSummary(summary);
+  }, [filteredOrders]);
+
+  // Update color summary when filtered orders change
+  useEffect(() => {
+    generateColorSummary();
+  }, [generateColorSummary]);
+
   // Fetch product images when orders are loaded
   useEffect(() => {
     if (orders.length > 0 && shop) {
@@ -949,10 +1028,65 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     setVendorSortDirection(direction);
   };
 
+  // Sort color summary
+  const sortedColorSummary = [...colorSummary].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+    const direction = colorSortDirection;
+
+    switch (colorSortColumn) {
+      case 0: // Row index (not sortable)
+        return 0;
+      case 1: // Color name
+        aValue = a.color.toLowerCase();
+        bValue = b.color.toLowerCase();
+        break;
+      case 2: // Variants
+        aValue = a.variantCount;
+        bValue = b.variantCount;
+        break;
+      case 3: // Units sold
+        aValue = a.unitsSold;
+        bValue = b.unitsSold;
+        break;
+      case 4: // Total revenue
+        aValue = a.totalRevenue;
+        bValue = b.totalRevenue;
+        break;
+      case 5: // Revenue percentage
+        aValue = a.revenuePercentage;
+        bValue = b.revenuePercentage;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+    return 0;
+  });
+
+  // Column headings for Color Summary table
+  const colorHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Color' },
+    { title: 'Variants' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Color Summary table
+  const handleColorSort = (index: number, direction: 'ascending' | 'descending') => {
+    setColorSortColumn(index);
+    setColorSortDirection(direction);
+  };
+
   // Tabs for Product Summary section
   const productSummaryTabs = [
     { id: 'by-variant', content: 'By Variant' },
     { id: 'by-product', content: 'By Product' },
+    { id: 'by-color', content: 'By Color' },
     { id: 'by-vendor', content: 'By Vendor' },
   ];
 
@@ -1603,6 +1737,44 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
                   </div>
                 </>
               ) : selectedProductTab === 2 ? (
+                <>
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">
+                    {colorSummary.length} colors from {sortedOrders.length} orders
+                  </Text>
+                  <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                    <IndexTable
+                      resourceName={{ singular: 'color', plural: 'colors' }}
+                      itemCount={sortedColorSummary.length}
+                      headings={colorHeadings}
+                      selectable={false}
+                      sortable={[false, true, true, true, true, true]}
+                      defaultSortDirection="descending"
+                      sortDirection={colorSortDirection}
+                      sortColumnIndex={colorSortColumn}
+                      onSort={handleColorSort}
+                    >
+                      {sortedColorSummary.map((color, index) => (
+                        <IndexTable.Row
+                          id={color.color}
+                          key={color.color}
+                          position={index}
+                        >
+                          <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            <Text as="span" fontWeight="semibold">{color.color}</Text>
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{color.variantCount}</IndexTable.Cell>
+                          <IndexTable.Cell>{color.unitsSold}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {formatCurrency(color.totalRevenue)}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{color.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
+                  </div>
+                </>
+              ) : selectedProductTab === 3 ? (
                 <>
                   <Text as="p" variant="bodyMd" fontWeight="semibold">
                     {vendorSummary.length} vendors from {sortedOrders.length} orders
