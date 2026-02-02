@@ -23,6 +23,8 @@ interface Drop {
   end_time: string;
   collection_id?: string | null;
   collection_title?: string | null;
+  inventory_snapshot?: string | null; // JSON string: { [variantId: string]: number }
+  snapshot_taken_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -180,6 +182,7 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
             shop={shop}
             dropStartTime={drop.start_time}
             dropEndTime={drop.end_time}
+            inventorySnapshot={drop.inventory_snapshot}
           />
         </BlockStack>
       </div>

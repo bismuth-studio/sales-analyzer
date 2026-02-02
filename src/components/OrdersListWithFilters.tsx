@@ -98,9 +98,10 @@ interface OrdersListProps {
   dropStartTime?: string;
   dropEndTime?: string;
   onCreateDrop?: (startDate: string, startTime: string, endDate: string, endTime: string) => void;
+  inventorySnapshot?: string | null; // JSON string: { [variantId: string]: number }
 }
 
-const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime, dropEndTime, onCreateDrop }) => {
+const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime, dropEndTime, onCreateDrop, inventorySnapshot }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -128,6 +129,23 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
   // Product images state (keys can be numbers or strings from JSON)
   const [productImages, setProductImages] = useState<{ [key: string]: string }>({});
 
+  // Inventory state
+  const [currentInventory, setCurrentInventory] = useState<{ [variantId: string]: number }>({});
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [isEstimatedInventory, setIsEstimatedInventory] = useState(false);
+
+  // Parse inventory snapshot if available
+  const parsedSnapshot: { [variantId: string]: number } | null = React.useMemo(() => {
+    if (inventorySnapshot) {
+      try {
+        return JSON.parse(inventorySnapshot);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }, [inventorySnapshot]);
+
   // Filter state (only used when no drop time range is provided)
   const isExploreMode = !dropStartTime && !dropEndTime;
   const today = new Date().toISOString().split('T')[0];
@@ -144,6 +162,31 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
     fetchOrders();
   }, [shop]);
+
+  // Fetch current inventory for reverse calculation when no snapshot exists
+  useEffect(() => {
+    if (!shop || !dropStartTime || parsedSnapshot) {
+      // Don't fetch if: no shop, not in drop mode, or we have a snapshot
+      return;
+    }
+
+    setInventoryLoading(true);
+    setIsEstimatedInventory(true);
+
+    fetch(`/api/orders/inventory?shop=${encodeURIComponent(shop)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.inventory) {
+          setCurrentInventory(data.inventory);
+        }
+      })
+      .catch(err => {
+        console.error('Error fetching current inventory:', err);
+      })
+      .finally(() => {
+        setInventoryLoading(false);
+      });
+  }, [shop, dropStartTime, parsedSnapshot]);
 
   useEffect(() => {
     applyFilters();
@@ -238,6 +281,25 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     applySorting(index, direction);
   };
 
+  // Helper to get initial inventory for a variant
+  const getInitialInventory = useCallback((variantId: number, unitsSold: number): number => {
+    const variantIdStr = String(variantId);
+
+    // Priority 1: Use snapshot if available (accurate)
+    if (parsedSnapshot && parsedSnapshot[variantIdStr] !== undefined) {
+      return parsedSnapshot[variantIdStr];
+    }
+
+    // Priority 2: Reverse calculate from current inventory (estimated)
+    if (currentInventory[variantIdStr] !== undefined) {
+      // Initial inventory = current inventory + units sold during drop
+      return currentInventory[variantIdStr] + unitsSold;
+    }
+
+    // Fallback: Use a reasonable default (will show as estimated)
+    return 50;
+  }, [parsedSnapshot, currentInventory]);
+
   // Generate product summary from filtered orders
   const generateProductSummary = useCallback(() => {
     const productMap = new Map<string, ProductSummary & { runningTotal: number }>();
@@ -246,6 +308,17 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     const sortedByTime = [...filteredOrders].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
+
+    // First pass: calculate total units sold per variant
+    const unitsSoldByVariant = new Map<number, number>();
+    sortedByTime.forEach((order) => {
+      order.line_items?.forEach((item) => {
+        if (item.variant_id) {
+          const current = unitsSoldByVariant.get(item.variant_id) || 0;
+          unitsSoldByVariant.set(item.variant_id, current + item.quantity);
+        }
+      });
+    });
 
     sortedByTime.forEach((order) => {
       if (!order.line_items || order.line_items.length === 0) {
@@ -271,23 +344,27 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
           size = parts[1] || '';
         }
 
+        // Get initial inventory for this variant
+        const totalSoldForVariant = unitsSoldByVariant.get(item.variant_id) || 0;
+        const initialInventory = getInitialInventory(item.variant_id, totalSoldForVariant);
+
         if (productMap.has(key)) {
           const existing = productMap.get(key)!;
           const previousTotal = existing.runningTotal;
           existing.runningTotal += item.quantity;
           existing.unitsSold = existing.runningTotal;
-          existing.remainingInventory = 50 - existing.unitsSold;
+          existing.remainingInventory = Math.max(0, initialInventory - existing.unitsSold);
           existing.totalRevenue += parseFloat(item.price) * item.quantity;
-          existing.sellThroughRate = (existing.unitsSold / 50) * 100;
+          existing.sellThroughRate = initialInventory > 0 ? (existing.unitsSold / initialInventory) * 100 : 0;
 
           // Check if this order caused the variant to sell out
-          if (previousTotal < 50 && existing.runningTotal >= 50 && !existing.soldOutAt) {
+          if (previousTotal < initialInventory && existing.runningTotal >= initialInventory && !existing.soldOutAt) {
             existing.soldOutAt = order.created_at;
           }
         } else {
           const unitsSold = item.quantity;
-          const remainingInventory = 50 - unitsSold;
-          const sellThroughRate = (unitsSold / 50) * 100;
+          const remainingInventory = Math.max(0, initialInventory - unitsSold);
+          const sellThroughRate = initialInventory > 0 ? (unitsSold / initialInventory) * 100 : 0;
 
           const entry: ProductSummary & { runningTotal: number } = {
             productId: item.product_id,
@@ -305,7 +382,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
             revenuePercentage: 0,
             imageUrl: undefined,
             runningTotal: unitsSold,
-            soldOutAt: unitsSold >= 50 ? order.created_at : undefined,
+            soldOutAt: unitsSold >= initialInventory ? order.created_at : undefined,
           };
 
           productMap.set(key, entry);
@@ -324,7 +401,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     });
 
     setProductSummary(summary);
-  }, [filteredOrders, productImages]);
+  }, [filteredOrders, productImages, getInitialInventory]);
 
   // Update product summary when filtered orders change
   useEffect(() => {
@@ -333,17 +410,32 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
   // Generate aggregated product summary (by product, not variant)
   const generateAggregatedProductSummary = useCallback(() => {
-    // First, count unique variants per product from the variant-level summary
-    const variantCountByProduct = new Map<string, Set<number>>();
-    productSummary.forEach(variant => {
-      const productName = variant.productName;
-      if (!variantCountByProduct.has(productName)) {
-        variantCountByProduct.set(productName, new Set());
-      }
-      variantCountByProduct.get(productName)!.add(variant.variantId);
+    // First, collect initial inventory per variant and calculate totals per product
+    const variantsByProduct = new Map<string, Map<number, number>>(); // productName -> (variantId -> initialInventory)
+    const unitsSoldByVariant = new Map<number, number>();
+
+    // Calculate units sold per variant
+    filteredOrders.forEach((order) => {
+      order.line_items?.forEach((item) => {
+        if (item.variant_id) {
+          const current = unitsSoldByVariant.get(item.variant_id) || 0;
+          unitsSoldByVariant.set(item.variant_id, current + item.quantity);
+        }
+      });
     });
 
-    const productMap = new Map<string, AggregatedProductSummary & { variantCount: number }>();
+    // Group variants by product and get their initial inventory
+    productSummary.forEach(variant => {
+      const productName = variant.productName;
+      if (!variantsByProduct.has(productName)) {
+        variantsByProduct.set(productName, new Map());
+      }
+      const totalSold = unitsSoldByVariant.get(variant.variantId) || variant.unitsSold;
+      const initialInv = getInitialInventory(variant.variantId, totalSold);
+      variantsByProduct.get(productName)!.set(variant.variantId, initialInv);
+    });
+
+    const productMap = new Map<string, AggregatedProductSummary & { variantCount: number; totalInitialStock: number }>();
 
     filteredOrders.forEach((order) => {
       if (!order.line_items || order.line_items.length === 0) {
@@ -357,19 +449,23 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
         // Use product name as key to aggregate all variants
         const key = item.title;
-        const variantCount = variantCountByProduct.get(key)?.size || 1;
-        const totalInitialStock = 50 * variantCount;
+        const variantsMap = variantsByProduct.get(key);
+        const variantCount = variantsMap?.size || 1;
+        // Sum up initial inventory for all variants of this product
+        const totalInitialStock = variantsMap
+          ? Array.from(variantsMap.values()).reduce((sum, inv) => sum + inv, 0)
+          : getInitialInventory(item.variant_id, unitsSoldByVariant.get(item.variant_id) || item.quantity);
 
         if (productMap.has(key)) {
           const existing = productMap.get(key)!;
           existing.unitsSold += item.quantity;
-          existing.remainingInventory = totalInitialStock - existing.unitsSold;
+          existing.remainingInventory = Math.max(0, existing.totalInitialStock - existing.unitsSold);
           existing.totalRevenue += parseFloat(item.price) * item.quantity;
-          existing.sellThroughRate = (existing.unitsSold / totalInitialStock) * 100;
+          existing.sellThroughRate = existing.totalInitialStock > 0 ? (existing.unitsSold / existing.totalInitialStock) * 100 : 0;
         } else {
           const unitsSold = item.quantity;
-          const remainingInventory = totalInitialStock - unitsSold;
-          const sellThroughRate = (unitsSold / totalInitialStock) * 100;
+          const remainingInventory = Math.max(0, totalInitialStock - unitsSold);
+          const sellThroughRate = totalInitialStock > 0 ? (unitsSold / totalInitialStock) * 100 : 0;
 
           productMap.set(key, {
             productId: item.product_id,
@@ -382,12 +478,13 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
             revenuePercentage: 0,
             imageUrl: undefined,
             variantCount: variantCount,
+            totalInitialStock: totalInitialStock,
           });
         }
       });
     });
 
-    const summary = Array.from(productMap.values());
+    const summary = Array.from(productMap.values()).map(({ totalInitialStock, ...rest }) => rest);
     const totalRevenue = summary.reduce((sum, product) => sum + product.totalRevenue, 0);
 
     summary.forEach(product => {
@@ -396,7 +493,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     });
 
     setAggregatedProductSummary(summary);
-  }, [filteredOrders, productImages, productSummary]);
+  }, [filteredOrders, productImages, productSummary, getInitialInventory]);
 
   // Update aggregated product summary when filtered orders change
   useEffect(() => {
@@ -1261,6 +1358,18 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
         </BlockStack>
       </Card>
 
+      {/* Inventory Loading Indicator */}
+      {inventoryLoading && !isExploreMode && (
+        <Card>
+          <InlineStack gap="200" blockAlign="center">
+            <Spinner size="small" />
+            <Text as="span" variant="bodySm" tone="subdued">
+              Loading current inventory for sell-through calculations...
+            </Text>
+          </InlineStack>
+        </Card>
+      )}
+
       {/* Sold Out Variants Section (only in drop analysis mode) */}
       {!isExploreMode && sortedProductSummary.filter(p => p.remainingInventory <= 0).length > 0 && (
         <Card>
@@ -1343,9 +1452,17 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
         <Card>
           <BlockStack gap="400">
             <InlineStack align="space-between">
-              <Text as="h2" variant="headingMd">
-                Product Sales Summary
-              </Text>
+              <InlineStack gap="200" blockAlign="center">
+                <Text as="h2" variant="headingMd">
+                  Product Sales Summary
+                </Text>
+                {isEstimatedInventory && !parsedSnapshot && (
+                  <Badge tone="attention">Estimated Inventory</Badge>
+                )}
+                {parsedSnapshot && (
+                  <Badge tone="success">Snapshot Inventory</Badge>
+                )}
+              </InlineStack>
               <Button onClick={exportToCSV}>
                 Export CSV
               </Button>

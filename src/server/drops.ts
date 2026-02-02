@@ -6,8 +6,79 @@ import {
   updateDrop,
   deleteDrop,
 } from './database';
+import { getSession, shopify } from './shopify';
 
 const router = Router();
+
+// Helper function to fetch inventory snapshot from Shopify
+async function fetchInventorySnapshot(shop: string): Promise<{ [variantId: string]: number } | null> {
+  try {
+    const session = getSession(shop);
+    if (!session) {
+      console.log('No session found for inventory snapshot');
+      return null;
+    }
+
+    const client = new shopify.clients.Graphql({ session });
+    const allInventory: { [variantId: string]: number } = {};
+    let hasNextPage = true;
+    let cursor: string | null = null;
+
+    while (hasNextPage) {
+      const query = `
+        query GetInventory($cursor: String) {
+          products(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            edges {
+              node {
+                id
+                variants(first: 100) {
+                  edges {
+                    node {
+                      id
+                      inventoryQuantity
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await client.request(query, {
+        variables: { cursor },
+      });
+
+      const data = response.data as any;
+      const products = data?.products;
+
+      if (products?.edges) {
+        for (const productEdge of products.edges) {
+          const variants = productEdge.node?.variants?.edges || [];
+          for (const variantEdge of variants) {
+            const variant = variantEdge.node;
+            const variantId = variant.id.split('/').pop();
+            const quantity = variant.inventoryQuantity ?? 0;
+            allInventory[variantId] = quantity;
+          }
+        }
+      }
+
+      hasNextPage = products?.pageInfo?.hasNextPage || false;
+      cursor = products?.pageInfo?.endCursor || null;
+    }
+
+    console.log(`Captured inventory snapshot: ${Object.keys(allInventory).length} variants`);
+    return allInventory;
+  } catch (error: any) {
+    console.error('Error fetching inventory snapshot:', error?.message || error);
+    return null;
+  }
+}
 
 // GET /api/drops - List all drops for a shop
 router.get('/', (req: Request, res: Response) => {
@@ -45,7 +116,7 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // POST /api/drops - Create a new drop
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const { shop, title, start_time, end_time, collection_id, collection_title } = req.body;
 
   if (!shop || !title || !start_time || !end_time) {
@@ -54,6 +125,11 @@ router.post('/', (req: Request, res: Response) => {
   }
 
   try {
+    // Fetch inventory snapshot from Shopify
+    console.log('Capturing inventory snapshot for new drop...');
+    const inventorySnapshot = await fetchInventorySnapshot(shop);
+    const snapshotTakenAt = inventorySnapshot ? new Date().toISOString() : null;
+
     const drop = createDrop({
       shop,
       title,
@@ -61,7 +137,11 @@ router.post('/', (req: Request, res: Response) => {
       end_time,
       collection_id,
       collection_title,
+      inventory_snapshot: inventorySnapshot ? JSON.stringify(inventorySnapshot) : null,
+      snapshot_taken_at: snapshotTakenAt,
     });
+
+    console.log(`Drop created with inventory snapshot: ${inventorySnapshot ? 'yes' : 'no'}`);
     res.status(201).json({ drop });
   } catch (error) {
     console.error('Error creating drop:', error);

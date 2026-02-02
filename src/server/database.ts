@@ -18,6 +18,8 @@ db.exec(`
     end_time TEXT NOT NULL,
     collection_id TEXT,
     collection_title TEXT,
+    inventory_snapshot TEXT,
+    snapshot_taken_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -25,6 +27,18 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_drops_shop ON drops(shop);
   CREATE INDEX IF NOT EXISTS idx_drops_start_time ON drops(start_time);
 `);
+
+// Migration: Add inventory_snapshot column if it doesn't exist
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN inventory_snapshot TEXT`);
+} catch {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN snapshot_taken_at TEXT`);
+} catch {
+  // Column already exists
+}
 
 export interface Drop {
   id: string;
@@ -34,6 +48,8 @@ export interface Drop {
   end_time: string;
   collection_id?: string | null;
   collection_title?: string | null;
+  inventory_snapshot?: string | null; // JSON string: { [variantId: string]: number }
+  snapshot_taken_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -45,6 +61,8 @@ export interface CreateDropInput {
   end_time: string;
   collection_id?: string | null;
   collection_title?: string | null;
+  inventory_snapshot?: string | null;
+  snapshot_taken_at?: string | null;
 }
 
 export interface UpdateDropInput {
@@ -71,8 +89,8 @@ export function getDropById(id: string): Drop | undefined {
 export function createDrop(input: CreateDropInput): Drop {
   const id = randomUUID();
   const stmt = db.prepare(`
-    INSERT INTO drops (id, shop, title, start_time, end_time, collection_id, collection_title)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO drops (id, shop, title, start_time, end_time, collection_id, collection_title, inventory_snapshot, snapshot_taken_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -82,7 +100,9 @@ export function createDrop(input: CreateDropInput): Drop {
     input.start_time,
     input.end_time,
     input.collection_id || null,
-    input.collection_title || null
+    input.collection_title || null,
+    input.inventory_snapshot || null,
+    input.snapshot_taken_at || null
   );
 
   return getDropById(id)!;

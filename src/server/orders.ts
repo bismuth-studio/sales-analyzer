@@ -343,4 +343,96 @@ router.get('/analytics', async (req: Request, res: Response) => {
   }
 });
 
+// Get current inventory levels for all variants
+router.get('/inventory', async (req: Request, res: Response) => {
+  console.log('Inventory endpoint called');
+  try {
+    const shop = req.query.shop as string;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    const session = getSession(shop);
+
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    // Create a GraphQL client for this session
+    const client = new shopify.clients.Graphql({ session });
+
+    // Fetch all products with their variants and inventory
+    const allInventory: { [variantId: string]: number } = {};
+    let hasNextPage = true;
+    let cursor: string | null = null;
+
+    while (hasNextPage) {
+      const query = `
+        query GetInventory($cursor: String) {
+          products(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            edges {
+              node {
+                id
+                variants(first: 100) {
+                  edges {
+                    node {
+                      id
+                      inventoryQuantity
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await client.request(query, {
+        variables: { cursor },
+      });
+
+      const data = response.data as any;
+      const products = data?.products;
+
+      if (products?.edges) {
+        for (const productEdge of products.edges) {
+          const variants = productEdge.node?.variants?.edges || [];
+          for (const variantEdge of variants) {
+            const variant = variantEdge.node;
+            // Extract numeric ID from gid://shopify/ProductVariant/123456
+            const variantId = variant.id.split('/').pop();
+            const quantity = variant.inventoryQuantity ?? 0;
+            allInventory[variantId] = quantity;
+          }
+        }
+      }
+
+      hasNextPage = products?.pageInfo?.hasNextPage || false;
+      cursor = products?.pageInfo?.endCursor || null;
+
+      console.log(`Fetched inventory for ${Object.keys(allInventory).length} variants so far...`);
+    }
+
+    console.log(`Finished fetching inventory. Total variants: ${Object.keys(allInventory).length}`);
+
+    res.json({
+      success: true,
+      inventory: allInventory,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('Error fetching inventory:', error?.message || error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch inventory',
+      message: error.message,
+    });
+  }
+});
+
 export default router;
