@@ -22,9 +22,24 @@ interface Order {
   email: string;
   created_at: string;
   total_price: string;
+  subtotal_price: string;
+  total_discounts: string;
+  total_line_items_price: string;
   currency: string;
   financial_status: string;
   tags: string;
+  customer?: {
+    id: number;
+    email: string;
+    orders_count: number;
+  } | null;
+  refunds?: Array<{
+    id: number;
+    created_at: string;
+    transactions: Array<{
+      amount: string;
+    }>;
+  }>;
   line_items: Array<{
     id: number;
     title: string;
@@ -846,10 +861,29 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
   // Calculate summary metrics
   const totalOrders = sortedOrders.length;
-  const uniqueCustomers = new Set(sortedOrders.map(order => order.email).filter(Boolean)).size;
-  const totalRevenue = sortedOrders.reduce((sum, order) => sum + parseFloat(order.total_price), 0);
   const totalItemsSold = sortedOrders.reduce((sum, order) =>
     sum + order.line_items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+
+  // Sales metrics
+  const grossSales = sortedOrders.reduce((sum, order) =>
+    sum + parseFloat(order.total_line_items_price || order.total_price || '0'), 0);
+  const totalDiscounts = sortedOrders.reduce((sum, order) =>
+    sum + parseFloat(order.total_discounts || '0'), 0);
+  const totalRefunds = sortedOrders.reduce((sum, order) => {
+    if (!order.refunds || order.refunds.length === 0) return sum;
+    return sum + order.refunds.reduce((refundSum, refund) =>
+      refundSum + refund.transactions.reduce((txSum, tx) => txSum + parseFloat(tx.amount || '0'), 0), 0);
+  }, 0);
+  const refundedOrdersCount = sortedOrders.filter(order => order.refunds && order.refunds.length > 0).length;
+  const netSales = grossSales - totalDiscounts - totalRefunds;
+  const avgOrderValue = totalOrders > 0 ? netSales / totalOrders : 0;
+
+  // Customer metrics
+  const uniqueCustomers = new Set(sortedOrders.map(order => order.email).filter(Boolean)).size;
+  const newCustomers = sortedOrders.filter(order =>
+    order.customer && order.customer.orders_count === 1).length;
+  const returningCustomers = sortedOrders.filter(order =>
+    order.customer && order.customer.orders_count > 1).length;
   // Calculate top 4 best-selling products (aggregated by product, not variant)
   const topProducts = (() => {
     const productTotals = new Map<string, { title: string; productId: number; unitsSold: number }>();
@@ -1065,37 +1099,89 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
           <Text as="h2" variant="headingMd">
             Summary
           </Text>
-          <InlineStack gap="800" align="start">
+          {/* Row 1: Sales Metrics */}
+          <InlineStack gap="800" align="start" wrap>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
-                Customers
+                Gross Sales
               </Text>
-              <Text as="p" variant="headingXl">
-                {uniqueCustomers.toLocaleString()}
+              <Text as="p" variant="headingLg">
+                {formatCurrency(grossSales)}
               </Text>
             </BlockStack>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
+                Discounts
+              </Text>
+              <Text as="p" variant="headingLg" tone={totalDiscounts > 0 ? 'caution' : undefined}>
+                -{formatCurrency(totalDiscounts)}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Returns
+              </Text>
+              <Text as="p" variant="headingLg" tone={refundedOrdersCount > 0 ? 'critical' : undefined}>
+                {refundedOrdersCount.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Net Sales
+              </Text>
+              <Text as="p" variant="headingLg" fontWeight="bold">
+                {formatCurrency(netSales)}
+              </Text>
+            </BlockStack>
+          </InlineStack>
+          {/* Row 2: Orders & Customers */}
+          <InlineStack gap="800" align="start" wrap>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
                 Orders
               </Text>
-              <Text as="p" variant="headingXl">
+              <Text as="p" variant="headingLg">
                 {totalOrders.toLocaleString()}
               </Text>
             </BlockStack>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
-                Items
+                Avg Order Value
               </Text>
-              <Text as="p" variant="headingXl">
+              <Text as="p" variant="headingLg">
+                {formatCurrency(avgOrderValue)}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Items Sold
+              </Text>
+              <Text as="p" variant="headingLg">
                 {totalItemsSold.toLocaleString()}
               </Text>
             </BlockStack>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
-                Revenue
+                Customers
               </Text>
-              <Text as="p" variant="headingXl">
-                {formatCurrency(totalRevenue)}
+              <Text as="p" variant="headingLg">
+                {uniqueCustomers.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                New Customers
+              </Text>
+              <Text as="p" variant="headingLg" tone="success">
+                {newCustomers.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Returning
+              </Text>
+              <Text as="p" variant="headingLg">
+                {returningCustomers.toLocaleString()}
               </Text>
             </BlockStack>
           </InlineStack>

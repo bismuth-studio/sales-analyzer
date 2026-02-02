@@ -9,8 +9,24 @@ interface Order {
   email: string;
   created_at: string;
   total_price: string;
+  subtotal_price: string;
+  total_discounts: string;
+  total_line_items_price: string;
   currency: string;
   financial_status: string;
+  tags: string;
+  customer?: {
+    id: number;
+    email: string;
+    orders_count: number;
+  } | null;
+  refunds?: Array<{
+    id: number;
+    created_at: string;
+    transactions: Array<{
+      amount: string;
+    }>;
+  }>;
   line_items: Array<{
     id: number;
     title: string;
