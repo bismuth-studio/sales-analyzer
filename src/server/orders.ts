@@ -435,4 +435,88 @@ router.get('/inventory', async (req: Request, res: Response) => {
   }
 });
 
+// Get variant metadata (SKU, product name, variant name) for inventory display
+router.get('/variants', async (req: Request, res: Response) => {
+  console.log('Variants metadata endpoint called');
+  try {
+    const shop = req.query.shop as string;
+    const variantIds = req.query.variantIds as string; // comma-separated
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    if (!variantIds) {
+      return res.status(400).json({ error: 'Missing variantIds parameter' });
+    }
+
+    const session = getSession(shop);
+
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const client = new shopify.clients.Graphql({ session });
+    const ids = variantIds.split(',').map(id => `gid://shopify/ProductVariant/${id.trim()}`);
+
+    // Shopify has a limit on the number of IDs per query, so batch them
+    const batchSize = 50;
+    const allVariants: Array<{
+      variantId: string;
+      sku: string;
+      variantName: string;
+      productName: string;
+    }> = [];
+
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batchIds = ids.slice(i, i + batchSize);
+
+      const query = `
+        query GetVariants($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on ProductVariant {
+              id
+              sku
+              title
+              product {
+                title
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await client.request(query, {
+        variables: { ids: batchIds },
+      });
+
+      const nodes = (response.data as any)?.nodes || [];
+      for (const v of nodes) {
+        if (v && v.id) {
+          allVariants.push({
+            variantId: v.id.split('/').pop(),
+            sku: v.sku || '',
+            variantName: v.title || 'Default',
+            productName: v.product?.title || 'Unknown',
+          });
+        }
+      }
+    }
+
+    console.log(`Fetched metadata for ${allVariants.length} variants`);
+
+    res.json({
+      success: true,
+      variants: allVariants,
+    });
+  } catch (error: any) {
+    console.error('Error fetching variant metadata:', error?.message || error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch variant metadata',
+      message: error.message,
+    });
+  }
+});
+
 export default router;

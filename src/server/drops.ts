@@ -5,6 +5,8 @@ import {
   createDrop,
   updateDrop,
   deleteDrop,
+  updateDropInventory,
+  updateDropOriginalSnapshot,
 } from './database';
 import { getSession, shopify } from './shopify';
 
@@ -189,6 +191,120 @@ router.delete('/:id', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error deleting drop:', error);
     res.status(500).json({ error: 'Failed to delete drop' });
+  }
+});
+
+// PUT /api/drops/:id/inventory - Update inventory snapshot (manual edit or CSV import)
+router.put('/:id/inventory', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { inventory, source } = req.body;
+  // inventory: { [variantId: string]: number }
+  // source: 'manual' | 'csv'
+
+  if (!inventory || typeof inventory !== 'object') {
+    res.status(400).json({ error: 'Invalid inventory data' });
+    return;
+  }
+
+  const validSources = ['manual', 'csv'];
+  const inventorySource = validSources.includes(source) ? source : 'manual';
+
+  try {
+    const drop = getDropById(id);
+    if (!drop) {
+      res.status(404).json({ error: 'Drop not found' });
+      return;
+    }
+
+    // Preserve original snapshot if this is first manual edit
+    if (!drop.original_inventory_snapshot && drop.inventory_snapshot) {
+      updateDropOriginalSnapshot(id, drop.inventory_snapshot);
+    }
+
+    const updatedDrop = updateDropInventory(id, {
+      inventory_snapshot: JSON.stringify(inventory),
+      inventory_source: inventorySource,
+    });
+
+    res.json({ drop: updatedDrop });
+  } catch (error) {
+    console.error('Error updating inventory:', error);
+    res.status(500).json({ error: 'Failed to update inventory' });
+  }
+});
+
+// POST /api/drops/:id/inventory/snapshot - Take fresh snapshot from Shopify
+router.post('/:id/inventory/snapshot', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { shop } = req.body;
+
+  if (!shop) {
+    res.status(400).json({ error: 'Missing shop parameter' });
+    return;
+  }
+
+  try {
+    const drop = getDropById(id);
+    if (!drop) {
+      res.status(404).json({ error: 'Drop not found' });
+      return;
+    }
+
+    // Fetch fresh inventory from Shopify
+    const inventorySnapshot = await fetchInventorySnapshot(shop);
+
+    if (!inventorySnapshot) {
+      res.status(500).json({ error: 'Failed to fetch inventory from Shopify' });
+      return;
+    }
+
+    const snapshotJson = JSON.stringify(inventorySnapshot);
+
+    // Update both snapshot and original
+    const updatedDrop = updateDropInventory(id, {
+      inventory_snapshot: snapshotJson,
+      inventory_source: 'auto',
+    });
+
+    // Also update original_inventory_snapshot
+    updateDropOriginalSnapshot(id, snapshotJson);
+
+    res.json({
+      drop: updatedDrop,
+      snapshotTime: new Date().toISOString(),
+      variantCount: Object.keys(inventorySnapshot).length,
+    });
+  } catch (error) {
+    console.error('Error taking inventory snapshot:', error);
+    res.status(500).json({ error: 'Failed to take inventory snapshot' });
+  }
+});
+
+// POST /api/drops/:id/inventory/reset - Reset to original snapshot
+router.post('/:id/inventory/reset', (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const drop = getDropById(id);
+    if (!drop) {
+      res.status(404).json({ error: 'Drop not found' });
+      return;
+    }
+
+    if (!drop.original_inventory_snapshot) {
+      res.status(400).json({ error: 'No original snapshot to reset to' });
+      return;
+    }
+
+    const updatedDrop = updateDropInventory(id, {
+      inventory_snapshot: drop.original_inventory_snapshot,
+      inventory_source: 'auto',
+    });
+
+    res.json({ drop: updatedDrop });
+  } catch (error) {
+    console.error('Error resetting inventory:', error);
+    res.status(500).json({ error: 'Failed to reset inventory' });
   }
 });
 

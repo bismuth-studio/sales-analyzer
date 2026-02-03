@@ -39,6 +39,18 @@ try {
 } catch {
   // Column already exists
 }
+// Migration: Add inventory_source column to track origin of inventory data
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN inventory_source TEXT DEFAULT 'auto'`);
+} catch {
+  // Column already exists
+}
+// Migration: Add original_inventory_snapshot to preserve auto-captured snapshot for reset
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN original_inventory_snapshot TEXT`);
+} catch {
+  // Column already exists
+}
 
 export interface Drop {
   id: string;
@@ -50,6 +62,8 @@ export interface Drop {
   collection_title?: string | null;
   inventory_snapshot?: string | null; // JSON string: { [variantId: string]: number }
   snapshot_taken_at?: string | null;
+  inventory_source?: 'auto' | 'manual' | 'csv' | null; // Origin of inventory data
+  original_inventory_snapshot?: string | null; // Preserved auto-snapshot for reset
   created_at: string;
   updated_at: string;
 }
@@ -153,6 +167,34 @@ export function deleteDrop(id: string): boolean {
   const stmt = db.prepare('DELETE FROM drops WHERE id = ?');
   const result = stmt.run(id);
   return result.changes > 0;
+}
+
+// Update drop inventory snapshot
+export function updateDropInventory(
+  id: string,
+  input: {
+    inventory_snapshot: string;
+    inventory_source: 'auto' | 'manual' | 'csv';
+  }
+): Drop | undefined {
+  const stmt = db.prepare(`
+    UPDATE drops
+    SET inventory_snapshot = ?,
+        inventory_source = ?,
+        snapshot_taken_at = datetime('now'),
+        updated_at = datetime('now')
+    WHERE id = ?
+  `);
+  stmt.run(input.inventory_snapshot, input.inventory_source, id);
+  return getDropById(id);
+}
+
+// Update original inventory snapshot (for reset functionality)
+export function updateDropOriginalSnapshot(id: string, snapshot: string): void {
+  const stmt = db.prepare(`
+    UPDATE drops SET original_inventory_snapshot = ? WHERE id = ?
+  `);
+  stmt.run(snapshot, id);
 }
 
 export default db;

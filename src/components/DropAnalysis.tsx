@@ -14,6 +14,7 @@ import {
 import { EditIcon } from '@shopify/polaris-icons';
 import OrdersListWithFilters from './OrdersListWithFilters';
 import DropModal from './DropModal';
+import InventoryManagement from './InventoryManagement/InventoryManagement';
 
 interface Drop {
   id: string;
@@ -25,6 +26,8 @@ interface Drop {
   collection_title?: string | null;
   inventory_snapshot?: string | null; // JSON string: { [variantId: string]: number }
   snapshot_taken_at?: string | null;
+  inventory_source?: 'auto' | 'manual' | 'csv' | null;
+  original_inventory_snapshot?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -177,6 +180,16 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
               </InlineStack>
             </BlockStack>
           </Card>
+
+          <InventoryManagement
+            dropId={drop.id}
+            shop={shop}
+            inventorySnapshot={drop.inventory_snapshot || null}
+            inventorySource={drop.inventory_source || 'auto'}
+            snapshotTakenAt={drop.snapshot_taken_at || null}
+            hasOriginalSnapshot={!!drop.original_inventory_snapshot}
+            onInventoryUpdated={handleDropSaved}
+          />
 
           <OrdersListWithFilters
             shop={shop}
