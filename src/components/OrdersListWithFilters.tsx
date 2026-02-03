@@ -75,6 +75,9 @@ interface ProductSummary {
 interface AggregatedProductSummary {
   productId: number;
   productName: string;
+  productType: string;
+  vendor: string;
+  category: string;
   unitsSold: number;
   remainingInventory: number;
   totalRevenue: number;
@@ -96,6 +99,24 @@ interface VendorSummary {
 interface ColorSummary {
   color: string;
   variantCount: number;
+  unitsSold: number;
+  totalRevenue: number;
+  currency: string;
+  revenuePercentage: number;
+}
+
+interface ProductTypeSummary {
+  productType: string;
+  productCount: number;
+  unitsSold: number;
+  totalRevenue: number;
+  currency: string;
+  revenuePercentage: number;
+}
+
+interface CategorySummary {
+  category: string;
+  productCount: number;
   unitsSold: number;
   totalRevenue: number;
   currency: string;
@@ -126,7 +147,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
   // Aggregated product summary (by product, not variant)
   const [aggregatedProductSummary, setAggregatedProductSummary] = useState<AggregatedProductSummary[]>([]);
-  const [aggregatedSortColumn, setAggregatedSortColumn] = useState<number>(2); // Default to Units Sold
+  const [aggregatedSortColumn, setAggregatedSortColumn] = useState<number>(6); // Default to Units Sold
   const [aggregatedSortDirection, setAggregatedSortDirection] = useState<'ascending' | 'descending'>('descending');
   const [selectedProductTab, setSelectedProductTab] = useState<number>(0);
 
@@ -140,8 +161,19 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
   const [colorSortColumn, setColorSortColumn] = useState<number>(2); // Default to Units Sold
   const [colorSortDirection, setColorSortDirection] = useState<'ascending' | 'descending'>('descending');
 
+  // Product type summary (by product type)
+  const [productTypeSummary, setProductTypeSummary] = useState<ProductTypeSummary[]>([]);
+  const [productTypeSortColumn, setProductTypeSortColumn] = useState<number>(2); // Default to Units Sold
+  const [productTypeSortDirection, setProductTypeSortDirection] = useState<'ascending' | 'descending'>('descending');
+
+  // Category summary (by category)
+  const [categorySummary, setCategorySummary] = useState<CategorySummary[]>([]);
+  const [categorySortColumn, setCategorySortColumn] = useState<number>(2); // Default to Units Sold
+  const [categorySortDirection, setCategorySortDirection] = useState<'ascending' | 'descending'>('descending');
+
   // Product images state (keys can be numbers or strings from JSON)
   const [productImages, setProductImages] = useState<{ [key: string]: string }>({});
+  const [productMetadata, setProductMetadata] = useState<{ [key: string]: { productType: string; vendor: string; category: string } }>({});
 
   // Inventory state
   const [currentInventory, setCurrentInventory] = useState<{ [variantId: string]: number }>({});
@@ -481,9 +513,13 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
           const remainingInventory = Math.max(0, totalInitialStock - unitsSold);
           const sellThroughRate = totalInitialStock > 0 ? (unitsSold / totalInitialStock) * 100 : 0;
 
+          const metadata = productMetadata[String(item.product_id)];
           productMap.set(key, {
             productId: item.product_id,
             productName: item.title,
+            productType: metadata?.productType || item.product_type || 'N/A',
+            vendor: metadata?.vendor || item.vendor || 'N/A',
+            category: metadata?.category || 'N/A',
             unitsSold: unitsSold,
             remainingInventory: remainingInventory,
             totalRevenue: parseFloat(item.price) * item.quantity,
@@ -507,7 +543,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     });
 
     setAggregatedProductSummary(summary);
-  }, [filteredOrders, productImages, productSummary, getInitialInventory]);
+  }, [filteredOrders, productImages, productMetadata, productSummary, getInitialInventory]);
 
   // Update aggregated product summary when filtered orders change
   useEffect(() => {
@@ -639,6 +675,106 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     generateColorSummary();
   }, [generateColorSummary]);
 
+  // Generate product type summary (by product type)
+  const generateProductTypeSummary = useCallback(() => {
+    const productTypeMap = new Map<string, ProductTypeSummary & { productIds: Set<number> }>();
+
+    aggregatedProductSummary.forEach((product) => {
+      const productType = product.productType || 'Unknown';
+
+      if (productTypeMap.has(productType)) {
+        const existing = productTypeMap.get(productType)!;
+        existing.unitsSold += product.unitsSold;
+        existing.totalRevenue += product.totalRevenue;
+        existing.productIds.add(product.productId);
+      } else {
+        const productIds = new Set<number>();
+        productIds.add(product.productId);
+
+        productTypeMap.set(productType, {
+          productType,
+          productCount: 0,
+          unitsSold: product.unitsSold,
+          totalRevenue: product.totalRevenue,
+          currency: product.currency,
+          revenuePercentage: 0,
+          productIds,
+        });
+      }
+    });
+
+    const summary = Array.from(productTypeMap.values()).map(pt => ({
+      productType: pt.productType,
+      productCount: pt.productIds.size,
+      unitsSold: pt.unitsSold,
+      totalRevenue: pt.totalRevenue,
+      currency: pt.currency,
+      revenuePercentage: 0,
+    }));
+
+    const totalRevenue = summary.reduce((sum, pt) => sum + pt.totalRevenue, 0);
+    summary.forEach(pt => {
+      pt.revenuePercentage = totalRevenue > 0 ? (pt.totalRevenue / totalRevenue) * 100 : 0;
+    });
+
+    setProductTypeSummary(summary);
+  }, [aggregatedProductSummary]);
+
+  // Update product type summary when aggregated products change
+  useEffect(() => {
+    generateProductTypeSummary();
+  }, [generateProductTypeSummary]);
+
+  // Generate category summary (by category)
+  const generateCategorySummary = useCallback(() => {
+    const categoryMap = new Map<string, CategorySummary & { productIds: Set<number> }>();
+
+    aggregatedProductSummary.forEach((product) => {
+      const category = product.category || 'Unknown';
+
+      if (categoryMap.has(category)) {
+        const existing = categoryMap.get(category)!;
+        existing.unitsSold += product.unitsSold;
+        existing.totalRevenue += product.totalRevenue;
+        existing.productIds.add(product.productId);
+      } else {
+        const productIds = new Set<number>();
+        productIds.add(product.productId);
+
+        categoryMap.set(category, {
+          category,
+          productCount: 0,
+          unitsSold: product.unitsSold,
+          totalRevenue: product.totalRevenue,
+          currency: product.currency,
+          revenuePercentage: 0,
+          productIds,
+        });
+      }
+    });
+
+    const summary = Array.from(categoryMap.values()).map(cat => ({
+      category: cat.category,
+      productCount: cat.productIds.size,
+      unitsSold: cat.unitsSold,
+      totalRevenue: cat.totalRevenue,
+      currency: cat.currency,
+      revenuePercentage: 0,
+    }));
+
+    const totalRevenue = summary.reduce((sum, cat) => sum + cat.totalRevenue, 0);
+    summary.forEach(cat => {
+      cat.revenuePercentage = totalRevenue > 0 ? (cat.totalRevenue / totalRevenue) * 100 : 0;
+    });
+
+    setCategorySummary(summary);
+  }, [aggregatedProductSummary]);
+
+  // Update category summary when aggregated products change
+  useEffect(() => {
+    generateCategorySummary();
+  }, [generateCategorySummary]);
+
   // Fetch product images when orders are loaded
   useEffect(() => {
     if (orders.length > 0 && shop) {
@@ -673,10 +809,14 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
           return response.json();
         })
         .then(data => {
-          console.log('Product images data:', data);
+          console.log('Product metadata data:', data);
           if (data.success && data.productImages) {
             console.log('Setting product images:', Object.keys(data.productImages).length, 'images');
             setProductImages(data.productImages);
+          }
+          if (data.success && data.productMetadata) {
+            console.log('Setting product metadata:', Object.keys(data.productMetadata).length, 'products');
+            setProductMetadata(data.productMetadata);
           }
         })
         .catch(error => console.error('Error fetching product images:', error));
@@ -927,23 +1067,35 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
         aValue = a.productName.toLowerCase();
         bValue = b.productName.toLowerCase();
         break;
-      case 3: // Units sold
+      case 3: // Product type
+        aValue = a.productType.toLowerCase();
+        bValue = b.productType.toLowerCase();
+        break;
+      case 4: // Category
+        aValue = a.category.toLowerCase();
+        bValue = b.category.toLowerCase();
+        break;
+      case 5: // Vendor
+        aValue = a.vendor.toLowerCase();
+        bValue = b.vendor.toLowerCase();
+        break;
+      case 6: // Units sold
         aValue = a.unitsSold;
         bValue = b.unitsSold;
         break;
-      case 4: // Remaining inventory
+      case 7: // Remaining inventory
         aValue = a.remainingInventory;
         bValue = b.remainingInventory;
         break;
-      case 5: // Sell-Through Rate
+      case 8: // Sell-Through Rate
         aValue = a.sellThroughRate;
         bValue = b.sellThroughRate;
         break;
-      case 6: // Total revenue
+      case 9: // Total revenue
         aValue = a.totalRevenue;
         bValue = b.totalRevenue;
         break;
-      case 7: // Revenue percentage
+      case 10: // Revenue percentage
         aValue = a.revenuePercentage;
         bValue = b.revenuePercentage;
         break;
@@ -961,6 +1113,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     { title: '#' },
     { title: 'Image' },
     { title: 'Product Name' },
+    { title: 'Product Type' },
+    { title: 'Category' },
+    { title: 'Vendor' },
     { title: 'Units Sold' },
     { title: 'Remaining Inventory' },
     { title: 'Sell-Through Rate' },
@@ -1082,12 +1237,122 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     setColorSortDirection(direction);
   };
 
+  // Sort product type summary
+  const sortedProductTypeSummary = [...productTypeSummary].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+    const direction = productTypeSortDirection;
+
+    switch (productTypeSortColumn) {
+      case 0: // Row index (not sortable)
+        return 0;
+      case 1: // Product type name
+        aValue = a.productType.toLowerCase();
+        bValue = b.productType.toLowerCase();
+        break;
+      case 2: // Products
+        aValue = a.productCount;
+        bValue = b.productCount;
+        break;
+      case 3: // Units sold
+        aValue = a.unitsSold;
+        bValue = b.unitsSold;
+        break;
+      case 4: // Total revenue
+        aValue = a.totalRevenue;
+        bValue = b.totalRevenue;
+        break;
+      case 5: // Revenue percentage
+        aValue = a.revenuePercentage;
+        bValue = b.revenuePercentage;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+    return 0;
+  });
+
+  // Column headings for Product Type Summary table
+  const productTypeHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Product Type' },
+    { title: 'Products' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Product Type Summary table
+  const handleProductTypeSort = (index: number, direction: 'ascending' | 'descending') => {
+    setProductTypeSortColumn(index);
+    setProductTypeSortDirection(direction);
+  };
+
+  // Sort category summary
+  const sortedCategorySummary = [...categorySummary].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+    const direction = categorySortDirection;
+
+    switch (categorySortColumn) {
+      case 0: // Row index (not sortable)
+        return 0;
+      case 1: // Category name
+        aValue = a.category.toLowerCase();
+        bValue = b.category.toLowerCase();
+        break;
+      case 2: // Products
+        aValue = a.productCount;
+        bValue = b.productCount;
+        break;
+      case 3: // Units sold
+        aValue = a.unitsSold;
+        bValue = b.unitsSold;
+        break;
+      case 4: // Total revenue
+        aValue = a.totalRevenue;
+        bValue = b.totalRevenue;
+        break;
+      case 5: // Revenue percentage
+        aValue = a.revenuePercentage;
+        bValue = b.revenuePercentage;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+    return 0;
+  });
+
+  // Column headings for Category Summary table
+  const categoryHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Category' },
+    { title: 'Products' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Category Summary table
+  const handleCategorySort = (index: number, direction: 'ascending' | 'descending') => {
+    setCategorySortColumn(index);
+    setCategorySortDirection(direction);
+  };
+
   // Tabs for Product Summary section
   const productSummaryTabs = [
     { id: 'by-variant', content: 'By Variant' },
     { id: 'by-product', content: 'By Product' },
     { id: 'by-color', content: 'By Color' },
     { id: 'by-vendor', content: 'By Vendor' },
+    { id: 'by-product-type', content: 'By Product Type' },
+    { id: 'by-category', content: 'By Category' },
   ];
 
   // Calculate summary metrics
@@ -1328,7 +1593,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       <Card>
         <BlockStack gap="400">
           <Text as="h2" variant="headingMd">
-            Summary
+            Drop Summary
           </Text>
           {/* Row 1: Sales Metrics */}
           <InlineStack gap="800" align="start" wrap>
@@ -1588,7 +1853,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
             <InlineStack align="space-between">
               <InlineStack gap="200" blockAlign="center">
                 <Text as="h2" variant="headingMd">
-                  Product Sales Summary
+                  Product Sales Breakdown
                 </Text>
                 {isEstimatedInventory && !parsedSnapshot && (
                   <Badge tone="attention">Estimated Inventory</Badge>
@@ -1682,7 +1947,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
                       itemCount={sortedAggregatedProductSummary.length}
                       headings={aggregatedProductHeadings}
                       selectable={false}
-                      sortable={[false, false, true, true, true, true, true, true]}
+                      sortable={[false, false, true, true, true, true, true, true, true, true, true]}
                       defaultSortDirection="descending"
                       sortDirection={aggregatedSortDirection}
                       sortColumnIndex={aggregatedSortColumn}
@@ -1724,6 +1989,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
                             )}
                           </IndexTable.Cell>
                           <IndexTable.Cell>{product.productName}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.productType}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.category}</IndexTable.Cell>
+                          <IndexTable.Cell>{product.vendor}</IndexTable.Cell>
                           <IndexTable.Cell>{product.unitsSold}</IndexTable.Cell>
                           <IndexTable.Cell>{product.remainingInventory}</IndexTable.Cell>
                           <IndexTable.Cell>{product.sellThroughRate.toFixed(1)}%</IndexTable.Cell>
@@ -1807,6 +2075,82 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
                             {formatCurrency(vendor.totalRevenue)}
                           </IndexTable.Cell>
                           <IndexTable.Cell>{vendor.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
+                  </div>
+                </>
+              ) : selectedProductTab === 4 ? (
+                <>
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">
+                    {productTypeSummary.length} product types from {sortedOrders.length} orders
+                  </Text>
+                  <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                    <IndexTable
+                      resourceName={{ singular: 'product type', plural: 'product types' }}
+                      itemCount={sortedProductTypeSummary.length}
+                      headings={productTypeHeadings}
+                      selectable={false}
+                      sortable={[false, true, true, true, true, true]}
+                      defaultSortDirection="descending"
+                      sortDirection={productTypeSortDirection}
+                      sortColumnIndex={productTypeSortColumn}
+                      onSort={handleProductTypeSort}
+                    >
+                      {sortedProductTypeSummary.map((productType, index) => (
+                        <IndexTable.Row
+                          id={productType.productType}
+                          key={productType.productType}
+                          position={index}
+                        >
+                          <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            <Text as="span" fontWeight="semibold">{productType.productType}</Text>
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{productType.productCount}</IndexTable.Cell>
+                          <IndexTable.Cell>{productType.unitsSold}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {formatCurrency(productType.totalRevenue)}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{productType.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
+                  </div>
+                </>
+              ) : selectedProductTab === 5 ? (
+                <>
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">
+                    {categorySummary.length} categories from {sortedOrders.length} orders
+                  </Text>
+                  <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                    <IndexTable
+                      resourceName={{ singular: 'category', plural: 'categories' }}
+                      itemCount={sortedCategorySummary.length}
+                      headings={categoryHeadings}
+                      selectable={false}
+                      sortable={[false, true, true, true, true, true]}
+                      defaultSortDirection="descending"
+                      sortDirection={categorySortDirection}
+                      sortColumnIndex={categorySortColumn}
+                      onSort={handleCategorySort}
+                    >
+                      {sortedCategorySummary.map((category, index) => (
+                        <IndexTable.Row
+                          id={category.category}
+                          key={category.category}
+                          position={index}
+                        >
+                          <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            <Text as="span" fontWeight="semibold">{category.category}</Text>
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{category.productCount}</IndexTable.Cell>
+                          <IndexTable.Cell>{category.unitsSold}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {formatCurrency(category.totalRevenue)}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{category.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
                         </IndexTable.Row>
                       ))}
                     </IndexTable>

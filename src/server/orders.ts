@@ -127,9 +127,9 @@ router.get('/recent', async (req: Request, res: Response) => {
   }
 });
 
-// Get product images for multiple product IDs
+// Get product metadata (images, type, vendor, category) for multiple product IDs
 router.post('/product-images', async (req: Request, res: Response) => {
-  console.log('Product images endpoint called');
+  console.log('Product metadata endpoint called');
   try {
     const shop = req.query.shop as string;
     const { productIds } = req.body;
@@ -154,6 +154,7 @@ router.post('/product-images', async (req: Request, res: Response) => {
 
     const client = new shopify.clients.Rest({ session });
     const productImages: { [key: string]: string } = {};
+    const productMetadata: { [key: string]: { productType: string; vendor: string; category: string } } = {};
 
     // Filter out null, undefined, and invalid product IDs
     // Product IDs can be numbers or numeric strings - normalize them
@@ -165,7 +166,7 @@ router.post('/product-images', async (req: Request, res: Response) => {
       })
       .filter((id): id is number => id !== null);
 
-    console.log('Fetching images for', uniqueProductIds.length, 'unique products:', uniqueProductIds.slice(0, 3));
+    console.log('Fetching metadata for', uniqueProductIds.length, 'unique products:', uniqueProductIds.slice(0, 3));
 
     // Fetch all products in parallel for speed
     const fetchPromises = uniqueProductIds.map(async (productId) => {
@@ -177,11 +178,21 @@ router.post('/product-images', async (req: Request, res: Response) => {
 
         const product = (response.body as any).product;
         const imageUrl = product?.image?.src || product?.images?.[0]?.src;
-        console.log(`Product ${productId}: image=${imageUrl ? 'found' : 'not found'}`);
-        if (imageUrl) {
-          return { productId: String(productId), imageUrl };
-        }
-        return null;
+        const productType = product?.product_type || '';
+        const vendor = product?.vendor || '';
+        // Use tags as category - take the first tag or use product_type as fallback
+        const tags = product?.tags || '';
+        const category = tags ? tags.split(',')[0].trim() : productType;
+
+        console.log(`Product ${productId}: image=${imageUrl ? 'found' : 'not found'}, type=${productType}, vendor=${vendor}, category=${category}`);
+
+        return {
+          productId: String(productId),
+          imageUrl,
+          productType,
+          vendor,
+          category,
+        };
       } catch (error: any) {
         console.error(`Error fetching product ${productId}:`, error?.message);
         return null;
@@ -190,23 +201,31 @@ router.post('/product-images', async (req: Request, res: Response) => {
 
     const results = await Promise.all(fetchPromises);
 
-    // Build the productImages object from results
+    // Build the response objects from results
     results.forEach(result => {
       if (result) {
-        productImages[result.productId] = result.imageUrl;
+        if (result.imageUrl) {
+          productImages[result.productId] = result.imageUrl;
+        }
+        productMetadata[result.productId] = {
+          productType: result.productType,
+          vendor: result.vendor,
+          category: result.category,
+        };
       }
     });
 
-    console.log('Successfully fetched', Object.keys(productImages).length, 'product images');
+    console.log('Successfully fetched metadata for', Object.keys(productMetadata).length, 'products');
 
     res.json({
       success: true,
       productImages,
+      productMetadata,
     });
   } catch (error: any) {
-    console.error('Error fetching product images:', error);
+    console.error('Error fetching product metadata:', error);
     res.status(500).json({
-      error: 'Failed to fetch product images',
+      error: 'Failed to fetch product metadata',
       message: error.message,
     });
   }
