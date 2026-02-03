@@ -1,17 +1,23 @@
 # Development Status & Documentation
 
-## Current Status: Foundation Complete ✅
+## Current Status: Production-Ready Application ✅
 
-We have successfully built the **foundational shell** of the Sales Analyzer Shopify app. The app is ready for setup and testing.
+Drop Analyzer is a **fully-featured Shopify app** for analyzing product drop sales with comprehensive analytics, inventory management, and advanced filtering capabilities.
 
 ---
 
 ## What We've Built
 
-### 🎯 Objective 1: COMPLETE ✅
-**Goal**: Simple "hello world" app that displays the user's last 10 sales on the app page.
+### Core Features - COMPLETE ✅
 
-**Status**: Fully implemented and ready to run.
+The app is a complete sales analytics platform with:
+
+- **Drop Management** - Full CRUD operations for time-based sales periods
+- **Advanced Analytics** - Multi-tab analytics with sales, product, and color breakdowns
+- **Inventory Management** - Auto-capture, manual editing, and CSV import
+- **Order Filtering** - Advanced date range and product filtering
+- **Data Visualization** - Charts and graphs using Shopify Polaris Viz
+- **Sell-Through Tracking** - Accurate calculations with hybrid inventory data
 
 ---
 
@@ -19,431 +25,547 @@ We have successfully built the **foundational shell** of the Sales Analyzer Shop
 
 ### Backend (Node.js + Express + TypeScript)
 
-**Location**: `src/server/`
+**Location**: [src/server/](src/server/)
 
-#### Files Created:
+#### Core Files:
 
 1. **[src/server/index.ts](src/server/index.ts)** - Main Express Server
-   - Serves the React frontend
-   - Routes API requests
+   - Serves React frontend in production
+   - Routes all API requests
    - Health check endpoint at `/api/health`
-   - Static file serving for production builds
+   - Static file serving from `dist/client/`
    - Runs on port 3000 (configurable via `.env`)
 
 2. **[src/server/shopify.ts](src/server/shopify.ts)** - Shopify Integration
-   - Initializes Shopify API client
-   - Handles OAuth authentication flow
+   - Shopify API client initialization
+   - OAuth authentication flow
    - Routes:
      - `GET /api/shopify/auth` - Initiates OAuth
      - `GET /api/shopify/callback` - OAuth callback handler
-   - Session management (in-memory for now)
-   - **Note**: For production, you'll want to replace in-memory session storage with a database
+   - In-memory session management (sufficient for single-store usage)
 
-3. **[src/server/orders.ts](src/server/orders.ts)** - Orders API
-   - Routes:
-     - `GET /api/orders/recent?shop=store.myshopify.com` - Fetches last 10 orders
-   - Returns order data including:
-     - Order ID and name
-     - Customer email
-     - Created date/time
-     - Total price and currency
-     - Payment status
-     - Line items (products)
+3. **[src/server/database.ts](src/server/database.ts)** - Database Layer
+   - SQLite database setup with WAL mode
+   - Automatic migrations on startup
+   - Indexed queries for performance
+   - Schema:
+     - `drops` table with inventory snapshot support
+     - Indexes on `shop` and `start_time`
+
+4. **[src/server/drops.ts](src/server/drops.ts)** - Drops CRUD API
+   - `GET /api/drops` - List all drops for a shop
+   - `GET /api/drops/:dropId` - Get single drop details
+   - `POST /api/drops` - Create drop (auto-captures inventory)
+   - `PUT /api/drops/:dropId` - Update drop
+   - `DELETE /api/drops/:dropId` - Delete drop
+   - `PUT /api/drops/:dropId/inventory` - Update inventory
+   - `POST /api/drops/:dropId/inventory/snapshot` - Take fresh snapshot
+   - `POST /api/drops/:dropId/inventory/reset` - Reset to original
+
+5. **[src/server/orders.ts](src/server/orders.ts)** - Orders API
+   - `GET /api/orders/recent` - Fetch all orders with pagination
+   - `POST /api/orders/product-images` - Batch fetch product images
+   - `GET /api/orders/collections` - List all collections
+   - `GET /api/orders/analytics` - ShopifyQL analytics queries
+   - `GET /api/orders/inventory` - Current inventory levels
+   - `GET /api/orders/variants` - Variant metadata (SKU, names)
+   - Advanced filtering by date, product, collection
 
 ### Frontend (React + TypeScript + Shopify Polaris)
 
-**Location**: `src/client/` and `src/components/`
+**Location**: [src/client/](src/client/) and [src/components/](src/components/)
 
-#### Files Created:
+#### Core Files:
 
-1. **[src/client/index.tsx](src/client/index.tsx)** - React Entry Point
-   - Mounts the React app to the DOM
-   - Imports Polaris styles
-
-2. **[src/client/App.tsx](src/client/App.tsx)** - Main App Component
+1. **[src/client/App.tsx](src/client/App.tsx)** - Main Application
+   - React Router setup with two main routes:
+     - `/` - Dashboard (drops list)
+     - `/drop/:dropId` - Drop analysis page
    - Shopify Polaris AppProvider wrapper
-   - Page layout with header
-   - Welcome message
-   - Embeds the OrdersList component
-   - Extracts shop parameter from URL
+   - Shop parameter extraction from URL
 
-3. **[src/components/OrdersList.tsx](src/components/OrdersList.tsx)** - Orders Display Component
-   - Fetches orders from backend API
-   - Loading states with spinner
-   - Error handling with banners
-   - Empty states for no orders
-   - Displays orders in a Polaris DataTable with columns:
-     - Order number
-     - Customer email
-     - Date/time (formatted)
-     - Total price
-     - Payment status (with colored badges)
-     - Number of items
+2. **[src/components/Dashboard.tsx](src/components/Dashboard.tsx)** - Main Dashboard
+   - Sortable table of all drops
+   - Status badges (Scheduled, Active, Completed)
+   - Edit/Delete operations
+   - "New Drop" modal
+   - Order Explorer section for creating drops from filtered data
 
-### Configuration Files
+3. **[src/components/DropAnalysis.tsx](src/components/DropAnalysis.tsx)** - Drop Detail Page
+   - Drop information card
+   - Edit drop functionality
+   - Tabbed analytics interface:
+     - Sales Summary Tab
+     - Product Sales Summary Tab
+     - By Color Tab
+   - Inventory Management section (expandable)
+   - Order Explorer with drop-specific filtering
 
-1. **[package.json](package.json)** - Dependencies & Scripts
-   - All required dependencies installed
-   - Scripts configured:
-     - `npm run dev` - Run both frontend and backend
-     - `npm run dev:server` - Backend only (port 3000)
-     - `npm run dev:client` - Frontend only (port 3001 with proxy)
-     - `npm run build` - Production build
-     - `npm start` - Run production server
+4. **[src/components/DropModal.tsx](src/components/DropModal.tsx)** - Create/Edit Drop
+   - Form for title, start/end times, collection selection
+   - Collection picker with Shopify data
+   - Validation and error handling
+   - Auto-captures inventory on creation
 
-2. **[tsconfig.json](tsconfig.json)** - TypeScript Config
-   - ES2020 target
-   - React JSX support
-   - Strict mode enabled
+5. **[src/components/OrdersListWithFilters.tsx](src/components/OrdersListWithFilters.tsx)** - Advanced Order Explorer
+   - Date range filtering with presets (Today, Last 7 Days, etc.)
+   - Product and collection filtering
+   - Analytics summary cards
+   - Quick drop creation from filtered results
+   - Sortable data table
 
-3. **[tsconfig.server.json](tsconfig.server.json)** - Server TypeScript Config
-   - Separate config for backend compilation
-   - CommonJS module system
-   - Outputs to `dist/server/`
+6. **[src/components/InventoryManagement/](src/components/InventoryManagement/)** - Inventory System
+   - **InventoryManagement.tsx** - Main inventory UI with tabs
+   - **InventoryTable.tsx** - Editable table with inline editing
+   - **CSVImportModal.tsx** - CSV bulk import interface
+   - **InventoryTypes.ts** - TypeScript interfaces
+   - Features:
+     - Manual quantity editing
+     - CSV import (variant_id, quantity)
+     - Take fresh snapshot
+     - Reset to original
+     - Metadata display (SKU, product, variant names)
 
-4. **[vite.config.ts](vite.config.ts)** - Vite Build Tool Config
-   - React plugin enabled
-   - Dev server on port 3001
-   - Proxy `/api` requests to backend (port 3000)
-   - Builds to `dist/client/`
+### Database (SQLite + better-sqlite3)
 
-5. **[.env](.env)** - Environment Variables
-   - Template created (needs to be filled in)
-   - Variables:
-     - `SHOPIFY_API_KEY` - From Partner Dashboard
-     - `SHOPIFY_API_SECRET` - From Partner Dashboard
-     - `SHOPIFY_APP_URL` - Your ngrok URL
-     - `SHOPIFY_SCOPES` - API permissions (read_orders, read_products)
-     - `PORT` - Server port (default 3000)
+**Location**: [data/drops.db](data/drops.db) (auto-created)
 
-6. **[shopify.app.toml](shopify.app.toml)** - Shopify App Config
-   - App metadata
-   - OAuth redirect URLs
-   - Scopes configuration
-   - Needs to be updated with your ngrok URL and client_id
+#### Schema:
 
-7. **[.gitignore](.gitignore)** - Git Ignore Rules
-   - node_modules/
-   - dist/
-   - .env (keeps secrets out of git)
-   - .DS_Store
-   - Log files
+```sql
+CREATE TABLE drops (
+  id TEXT PRIMARY KEY,
+  shop TEXT NOT NULL,
+  title TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  collection_id TEXT,
+  collection_title TEXT,
+  inventory_snapshot TEXT,           -- JSON: {variantId: quantity}
+  snapshot_taken_at TEXT,
+  inventory_source TEXT,             -- 'auto', 'manual', 'csv'
+  original_inventory_snapshot TEXT,  -- Preserved for reset
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
 
----
+CREATE INDEX idx_drops_shop ON drops(shop);
+CREATE INDEX idx_drops_start_time ON drops(start_time);
+```
 
-## Dependencies Installed
-
-### Production Dependencies
-- `@shopify/shopify-api` - Official Shopify API library
-- `@shopify/polaris` - Shopify's React UI component library
-- `@shopify/polaris-viz` - Data visualization components (for future use)
-- `express` - Web server framework
-- `react` & `react-dom` - React library
-- `react-router-dom` - Client-side routing (for future multi-page features)
-- `dotenv` - Environment variable management
-- `cors` - Cross-origin resource sharing
-
-### Development Dependencies
-- `typescript` - TypeScript compiler
-- `tsx` - TypeScript execution for development
-- `nodemon` - Auto-restart server on file changes
-- `vite` - Fast build tool for frontend
-- `@vitejs/plugin-react` - React support for Vite
-- `concurrently` - Run multiple npm scripts simultaneously
-- `@types/*` - TypeScript type definitions
+**Features:**
+- Write-Ahead Logging (WAL) mode for concurrent reads
+- Automatic migrations on server startup
+- Indexed queries for performance
+- JSON storage for flexible inventory data
 
 ---
 
-## What Works Right Now
+## What's Implemented ✅
 
-✅ **Backend API**
-- Express server configured and ready
-- Shopify OAuth flow implemented
-- Orders endpoint ready to fetch data
-- Session management working (in-memory)
+### Drop Management
+- ✅ Create, Read, Update, Delete drops
+- ✅ Time-based drop periods (start/end times)
+- ✅ Collection-specific or store-wide tracking
+- ✅ Automatic status calculation (Scheduled/Active/Completed)
+- ✅ Edit drop details after creation
 
-✅ **Frontend UI**
-- React app with Shopify Polaris design system
-- Welcome page with branding
-- Orders table with proper formatting
-- Loading states and error handling
-- Empty states for no data
+### Analytics & Reporting
+- ✅ Sales Summary with total revenue, units sold, AOV
+- ✅ Product-level breakdown with variant details
+- ✅ Color-based sales analysis with charts
+- ✅ Minute-by-minute sales visualization
+- ✅ Sell-through rate calculations
+- ✅ Top sellers identification
+- ✅ Vendor sales analysis
+- ✅ Timeline charts (Polaris Viz)
 
-✅ **Build System**
-- TypeScript compilation configured
-- Vite dev server with hot reload
-- Production build pipeline ready
-- Concurrent dev mode (frontend + backend together)
+### Inventory Management
+- ✅ Automatic inventory snapshot on drop creation
+- ✅ Manual editing of inventory quantities
+- ✅ CSV bulk import (variant_id, quantity)
+- ✅ Take fresh snapshots at any time
+- ✅ Reset to original snapshot
+- ✅ Hybrid tracking (auto + manual/CSV)
+- ✅ Metadata display (SKU, product/variant names)
 
-✅ **Development Tools**
-- Auto-restart on file changes
-- TypeScript type checking
-- Source maps for debugging
+### Order Exploration
+- ✅ Advanced filtering by date range
+- ✅ Filter by product and collection
+- ✅ Date presets (Today, Last 7 Days, etc.)
+- ✅ Quick drop creation from filters
+- ✅ Order details view
+- ✅ Analytics summary cards
+
+### Data Visualization
+- ✅ Shopify Polaris Viz charts
+- ✅ Sales over time graphs
+- ✅ Color distribution charts
+- ✅ Product performance visuals
+
+### Developer Experience
+- ✅ TypeScript throughout (type-safe)
+- ✅ Hot reload for frontend (Vite)
+- ✅ Auto-restart for backend (Nodemon)
+- ✅ Concurrent dev mode (frontend + backend)
+- ✅ Production build pipeline
+- ✅ Environment variable management
 
 ---
 
-## What's NOT Yet Implemented
+## What's NOT Implemented
 
-❌ **Production Session Storage**
-- Currently using in-memory sessions (will reset on server restart)
-- TODO: Add database (PostgreSQL, MongoDB, or Redis)
-
-❌ **Minute-by-Minute Analysis**
-- Core objective for this app
-- Currently just showing last 10 orders as a foundation
-- TODO: Add time-range filtering
-- TODO: Add minute-level breakdown
-- TODO: Add hourly views with per-minute data
-
-❌ **Data Visualization**
-- Polaris Viz installed but not yet used
-- TODO: Add charts/graphs for sales over time
-
-❌ **Advanced Filtering**
-- TODO: Filter by date range
-- TODO: Filter by product
-- TODO: Filter by customer
-
-❌ **Export Functionality**
-- TODO: Export to CSV
-- TODO: Export to Excel
-
-❌ **App Bridge Integration**
-- Currently not using Shopify App Bridge
-- TODO: Add for better embedded app experience
-
-❌ **Webhooks**
-- TODO: Add webhooks for real-time order updates
+### Optional/Future Enhancements
+- ❌ Multi-store support (currently single-store focused)
+- ❌ Real-time webhooks (currently on-demand fetching)
+- ❌ Export to CSV/Excel (data is viewable but not exportable)
+- ❌ Automated tests (no test suite yet)
+- ❌ Database backups (manual SQLite file backup required)
+- ❌ User authentication beyond Shopify OAuth
+- ❌ Custom reporting templates
+- ❌ Email notifications
+- ❌ Scheduled reports
 
 ---
 
 ## Development Workflow
 
-### Current Setup Status: Not Yet Running
+### Starting Development
 
-**You need to complete these steps to run the app:**
+**Prerequisites:**
+1. ✅ Node.js installed (v18+)
+2. ✅ npm installed
+3. ✅ ngrok installed (for local development)
+4. ✅ Shopify Partner account
+5. ✅ Shopify test store
 
-1. ⏳ Install ngrok and get a public URL
-2. ⏳ Create Shopify app in Partner Dashboard
-3. ⏳ Fill in credentials in `.env` file
-4. ⏳ Update `shopify.app.toml` with your values
-5. ⏳ Run `npm run dev`
-6. ⏳ Install app on test store
+**Setup Steps:**
 
-**See [README.md](README.md) for detailed setup instructions.**
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-### Once Running:
+2. Configure environment (`.env` file):
+   ```env
+   SHOPIFY_API_KEY=your_api_key
+   SHOPIFY_API_SECRET=your_api_secret
+   SHOPIFY_APP_URL=https://your-ngrok-url.ngrok-free.dev
+   SHOPIFY_SCOPES=read_orders,read_products,read_inventory
+   SHOPIFY_ACCESS_TOKEN=shpat_xxxxx  # Optional - for scripts
+   PORT=3000
+   ```
 
-**Development Mode:**
-```bash
-npm run dev
-```
-This runs:
-- Backend server at `http://localhost:3000`
-- Frontend dev server at `http://localhost:3001` (with hot reload)
-- API requests from frontend proxied to backend
+3. Start ngrok:
+   ```bash
+   ngrok http 3000
+   ```
 
-**Making Changes:**
-- Edit files in `src/` directory
-- Frontend: Changes hot-reload instantly
-- Backend: Server auto-restarts on save
+4. Update `.env` with ngrok URL
 
-**Testing:**
-- Backend health: `http://localhost:3000/api/health`
-- Frontend dev: `http://localhost:3001`
-- Production-like: `http://localhost:3000` (after building)
+5. Start development servers:
+   ```bash
+   npm run dev
+   ```
+   This runs:
+   - Backend at `http://localhost:3000`
+   - Frontend at `http://localhost:3001` (with hot reload)
+
+6. Authenticate:
+   Visit: `https://your-ngrok-url.ngrok-free.dev/api/shopify/auth?shop=your-store.myshopify.com`
+
+**See [DEV_WORKFLOW.md](DEV_WORKFLOW.md) for detailed dev session management.**
+
+### Making Changes
+
+**Frontend Development:**
+1. Edit files in `src/client/` or `src/components/`
+2. Changes hot-reload automatically at `http://localhost:3001`
+3. Use Shopify Polaris components for UI consistency
+
+**Backend Development:**
+1. Edit files in `src/server/`
+2. Server auto-restarts on save (via Nodemon)
+3. Test endpoints at `http://localhost:3000/api/...`
+
+**Database Changes:**
+1. Update schema in `src/server/database.ts`
+2. Add migration logic in `initDatabase()` function
+3. Restart server - migrations run automatically
+
+### Testing
+
+**Manual Testing:**
+1. Use the order generator script:
+   ```bash
+   npx tsx scripts/ultimate-order-generator.ts 100
+   ```
+   This creates realistic test orders with drop patterns.
+
+2. Create products:
+   ```bash
+   npx tsx scripts/create-products.js
+   ```
+
+3. Test features in browser at `http://localhost:3001`
+
+**Production Testing:**
+1. Build the app:
+   ```bash
+   npm run build
+   ```
+
+2. Run production server:
+   ```bash
+   npm start
+   ```
+
+3. Test at `http://localhost:3000`
 
 ---
 
 ## File Structure
 
 ```
-sales-analyzer/
-├── README.md                   # Setup instructions
-├── DEVELOPMENT.md             # This file - development status
-├── package.json               # Dependencies and scripts
-├── tsconfig.json              # TypeScript config (general)
-├── tsconfig.server.json       # TypeScript config (backend)
-├── vite.config.ts             # Vite build tool config
-├── shopify.app.toml           # Shopify app configuration
-├── .env                       # Environment variables (SECRET - not in git)
-├── .env.example               # Environment variables template
-├── .gitignore                 # Git ignore rules
+drop-analyzer/
+├── README.md                      # User-facing documentation
+├── DEVELOPMENT.md                 # This file - developer guide
+├── DEV_WORKFLOW.md               # Dev session workflow
 │
 ├── src/
-│   ├── server/                # Backend (Node.js/Express)
-│   │   ├── index.ts          # Main server file
-│   │   ├── shopify.ts        # Shopify OAuth & API
-│   │   └── orders.ts         # Orders API endpoints
+│   ├── client/                   # React Frontend
+│   │   ├── App.tsx              # Main app with routing
+│   │   ├── index.tsx            # React entry point
+│   │   ├── index.html           # HTML template
+│   │   └── styles.css           # Global styles
 │   │
-│   ├── client/               # Frontend (React)
-│   │   ├── index.tsx         # React entry point
-│   │   └── App.tsx           # Main app component
+│   ├── components/              # React Components
+│   │   ├── Dashboard.tsx        # Main dashboard
+│   │   ├── DropAnalysis.tsx     # Drop detail page
+│   │   ├── DropModal.tsx        # Create/edit modal
+│   │   ├── OrdersList.tsx       # Basic orders list
+│   │   ├── OrdersListWithFilters.tsx  # Advanced filtering
+│   │   └── InventoryManagement/
+│   │       ├── InventoryManagement.tsx
+│   │       ├── InventoryTable.tsx
+│   │       ├── CSVImportModal.tsx
+│   │       └── InventoryTypes.ts
 │   │
-│   └── components/           # React components
-│       └── OrdersList.tsx    # Last 10 orders display
+│   └── server/                  # Express Backend
+│       ├── index.ts            # Server + routes
+│       ├── shopify.ts          # OAuth & API
+│       ├── database.ts         # SQLite setup
+│       ├── drops.ts            # Drops CRUD
+│       └── orders.ts           # Orders API
 │
-├── public/                   # Static assets
-│   └── index.html           # HTML template
+├── scripts/                     # Utility Scripts
+│   ├── ultimate-order-generator.ts  # Generate test orders
+│   ├── get-access-token.ts          # Get Shopify token
+│   ├── create-products.js           # Create products
+│   ├── README-ORDER-GENERATOR.md    # Generator docs
+│   └── QUICK-START.md               # Quick guide
 │
-├── dist/                    # Built files (generated, not in git)
-│   ├── server/             # Compiled backend
-│   └── client/             # Built frontend
+├── data/                        # Database
+│   └── drops.db                # SQLite database (auto-created)
 │
-└── node_modules/           # Dependencies (not in git)
+├── dist/                       # Built Files (generated)
+│   ├── client/                # Built React app
+│   └── server/                # Built Node server
+│
+├── public/                     # Static Assets
+│
+├── package.json               # Dependencies & scripts
+├── tsconfig.json              # TypeScript (client)
+├── tsconfig.server.json       # TypeScript (server)
+├── vite.config.ts             # Vite config
+└── .env                       # Environment vars (SECRET)
 ```
-
----
-
-## Next Phase: Minute-by-Minute Analysis
-
-Once the basic app is working, the next development phase is:
-
-### Phase 2: Time-Based Analysis
-
-**Goal**: Allow users to view sales broken down by minute for a specific hour
-
-**Planned Features**:
-1. Time range picker (select specific hour)
-2. Minute-by-minute breakdown table/chart
-3. Aggregated metrics:
-   - Sales per minute
-   - Average order value per minute
-   - Peak minute identification
-4. Visualization with Polaris Viz charts
-
-**Technical Requirements**:
-- Update orders API to accept time range parameters
-- Add filtering logic for minute-level granularity
-- Implement data aggregation
-- Add chart components
-- Build time picker UI component
-
----
-
-## Known Issues / TODOs
-
-### Immediate
-- [ ] Need to fill in `.env` with actual Shopify credentials
-- [ ] Need to test OAuth flow end-to-end
-- [ ] Need to verify orders endpoint with real Shopify data
-
-### Short-term
-- [ ] Replace in-memory session storage with database
-- [ ] Add proper error logging
-- [ ] Add input validation
-- [ ] Add rate limiting for API calls
-
-### Long-term
-- [ ] Implement minute-by-minute analysis (main feature)
-- [ ] Add data visualization
-- [ ] Add export functionality
-- [ ] Add webhook listeners for real-time updates
-- [ ] Deploy to production hosting
-- [ ] Add automated tests
 
 ---
 
 ## API Documentation
 
-### Backend Endpoints
+### Shopify OAuth
+- `GET /api/shopify/auth?shop=SHOP` - Initiate OAuth
+- `GET /api/shopify/callback` - OAuth callback
 
-#### Health Check
-```
-GET /api/health
-Response: { "status": "ok", "message": "Sales Analyzer API is running" }
-```
+### Drops CRUD
+- `GET /api/drops?shop=SHOP` - List all drops
+- `GET /api/drops/:dropId` - Get single drop
+- `POST /api/drops` - Create drop (auto-captures inventory)
+- `PUT /api/drops/:dropId` - Update drop
+- `DELETE /api/drops/:dropId` - Delete drop
 
-#### Shopify OAuth
-```
-GET /api/shopify/auth?shop=store.myshopify.com
-Redirects to Shopify OAuth authorization
-```
+### Inventory Management
+- `PUT /api/drops/:dropId/inventory` - Update inventory (manual/CSV)
+- `POST /api/drops/:dropId/inventory/snapshot` - Capture fresh snapshot
+- `POST /api/drops/:dropId/inventory/reset` - Reset to original
 
-#### OAuth Callback
-```
-GET /api/shopify/callback?code=xxx&shop=store.myshopify.com
-Handles OAuth callback, creates session, redirects to app
-```
+### Orders & Analytics
+- `GET /api/orders/recent?shop=SHOP` - Fetch orders with filters
+- `POST /api/orders/product-images` - Batch fetch images
+- `GET /api/orders/collections?shop=SHOP` - List collections
+- `GET /api/orders/analytics?shop=SHOP` - ShopifyQL analytics
+- `GET /api/orders/inventory?shop=SHOP` - Current inventory
+- `GET /api/orders/variants?shop=SHOP&variantIds=...` - Variant metadata
 
-#### Get Recent Orders
-```
-GET /api/orders/recent?shop=store.myshopify.com
-
-Response:
-{
-  "success": true,
-  "count": 10,
-  "orders": [
-    {
-      "id": 123456,
-      "name": "#1001",
-      "email": "customer@example.com",
-      "created_at": "2024-01-15T10:30:00Z",
-      "total_price": "99.99",
-      "currency": "USD",
-      "financial_status": "paid",
-      "line_items": [...]
-    }
-  ]
-}
-
-Error Response:
-{
-  "error": "Error message",
-  "message": "Detailed error description"
-}
-```
+### Health
+- `GET /api/health` - API status check
 
 ---
 
-## Environment Variables Reference
+## Recent Development History
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `SHOPIFY_API_KEY` | Client ID from Partner Dashboard | `abc123def456...` |
-| `SHOPIFY_API_SECRET` | Client Secret from Partner Dashboard | `xyz789...` |
-| `SHOPIFY_APP_URL` | Public URL for your app (ngrok) | `https://abc.ngrok.io` |
-| `SHOPIFY_SCOPES` | Comma-separated API scopes | `read_orders,read_products` |
-| `PORT` | Port for backend server | `3000` |
+**Last 8 Commits:**
+
+1. `e67f3ea` - docs: comprehensive README overhaul
+2. `a1fcab6` - Merge experimental features into main
+3. `55f24b8` - feat: consolidate order scripts into ultimate-order-generator
+4. `4b341a6` - feat: add inventory management with manual editing and CSV import
+5. `0bf2b37` - feat: add By Color tab to Product Sales Summary
+6. `1925f77` - feat: add hybrid inventory tracking for accurate sell-through rates
+7. `2a74b77` - feat: expand summary metrics with detailed sales and customer data
+8. `6309ebf` - feat: improve order explorer with date presets and default to today
 
 ---
 
-## How to Continue Development
+## Technology Stack
 
-### Adding a New Feature
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| **Frontend** | React | 18.3.1 |
+| | TypeScript | 5.9.3 |
+| | Vite | 7.3.0 |
+| | Shopify Polaris | 13.9.5 |
+| | Shopify Polaris Viz | 16.16.0 |
+| | React Router | 7.11.0 |
+| **Backend** | Express | 5.2.1 |
+| | TypeScript | 5.9.3 |
+| | better-sqlite3 | 12.6.2 |
+| | Shopify API | 12.2.0 |
+| | CORS | 2.8.5 |
+| | dotenv | 17.2.3 |
+| **Dev Tools** | Nodemon | 3.1.11 |
+| | tsx | 4.21.0 |
+| | Concurrently | 9.2.1 |
 
-1. **Backend (API)**:
-   - Create new route file in `src/server/`
-   - Import and add to `src/server/index.ts`
-   - Test with curl or Postman
+---
 
-2. **Frontend (UI)**:
-   - Create component in `src/components/`
-   - Import into `src/client/App.tsx`
-   - Use Shopify Polaris components
+## Known Issues / TODOs
 
-3. **Testing**:
-   - Start dev server: `npm run dev`
-   - Check browser at `http://localhost:3001`
-   - Check console for errors
+### High Priority
+- [ ] Add automated tests (unit + integration)
+- [ ] Implement database backup strategy
+- [ ] Add error logging/monitoring for production
+
+### Medium Priority
+- [ ] Export functionality (CSV/Excel)
+- [ ] Real-time updates via webhooks
+- [ ] Multi-store support (if needed)
+
+### Low Priority
+- [ ] Custom report templates
+- [ ] Email notifications
+- [ ] Scheduled reports
+- [ ] Mobile responsive improvements
+
+---
+
+## Production Deployment
+
+### Build
+
+```bash
+npm run build
+```
+
+This creates:
+- `dist/client/` - Optimized React bundle
+- `dist/server/` - Compiled Node.js server
+
+### Run
+
+```bash
+npm start
+```
+
+Server will:
+1. Serve React app from `dist/client/`
+2. Handle API requests
+3. Use database at `data/drops.db`
+
+### Hosting Recommendations
+
+**Suitable Platforms:**
+- Railway (persistent storage support)
+- Render (free tier available)
+- DigitalOcean App Platform
+- Fly.io (persistent volumes)
+
+**Requirements:**
+- Node.js 18+ runtime
+- Persistent storage for `data/drops.db`
+- HTTPS support (required for Shopify apps)
+- Environment variables configuration
+
+**Deployment Checklist:**
+1. ✅ Set environment variables on platform
+2. ✅ Ensure persistent storage for database
+3. ✅ Update `SHOPIFY_APP_URL` to production domain
+4. ✅ Update Shopify Partner Dashboard with production URLs
+5. ✅ Enable HTTPS/SSL
+6. ✅ Test OAuth flow on production
 
 ---
 
 ## Support & Resources
 
-- **Shopify App Development**: https://shopify.dev/docs/apps
-- **Shopify API Reference**: https://shopify.dev/docs/api
-- **Polaris Components**: https://polaris.shopify.com/components
-- **React Documentation**: https://react.dev
-- **TypeScript Docs**: https://www.typescriptlang.org/docs
+**Documentation:**
+- [README.md](README.md) - User setup guide
+- [DEV_WORKFLOW.md](DEV_WORKFLOW.md) - Dev session workflow
+- [scripts/README-ORDER-GENERATOR.md](scripts/README-ORDER-GENERATOR.md) - Order generator
+
+**External Resources:**
+- [Shopify App Development](https://shopify.dev/docs/apps)
+- [Shopify Admin API](https://shopify.dev/docs/api/admin)
+- [Shopify Polaris](https://polaris.shopify.com/)
+- [React Documentation](https://react.dev)
+- [TypeScript Docs](https://www.typescriptlang.org/docs)
+
+---
+
+## Contributing
+
+When adding features:
+
+1. **Plan**: Document requirements and approach
+2. **Implement**: Write type-safe code (TypeScript)
+3. **Test**: Manual testing with realistic data
+4. **Document**: Update relevant .md files
+5. **Commit**: Use conventional commits (feat/fix/docs/etc.)
+
+**Code Style:**
+- Use TypeScript throughout
+- Follow existing patterns
+- Use Shopify Polaris components
+- Handle errors gracefully
+- Add loading states for async operations
 
 ---
 
 ## Summary
 
-**We are here**: ✅ Foundation complete, ready for setup and first run
+**Current State**: Production-ready Shopify app with comprehensive drop analytics
 
-**Next step**: Follow [README.md](README.md) to configure and launch the app
+**Key Strengths:**
+- Full-featured drop management
+- Advanced inventory tracking
+- Rich analytics and visualization
+- Type-safe development
+- Good developer experience
 
-**Future goal**: Build minute-by-minute sales analysis on top of this foundation
+**Next Steps**: Focus on testing, monitoring, and production deployment
+
+---
+
+**Built for analyzing street fashion product drops with precision and style.**

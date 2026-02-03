@@ -1,6 +1,6 @@
 # Development Workflow Guide
 
-Quick reference for starting and stopping development sessions for the Sales Analyzer Shopify app.
+Quick reference for starting and stopping development sessions for the Drop Analyzer Shopify app.
 
 ## Starting a Dev Session
 
@@ -113,7 +113,7 @@ Replace `[NGROK_URL]` with your current ngrok URL (e.g., `https://suzann-languis
 |---------|-----|
 | Re-authenticate (after server restart) | `https://[NGROK_URL]/api/shopify/auth?shop=bismuth-dev.myshopify.com` |
 | Debug with console logs (outside iframe) | `http://localhost:3001?shop=bismuth-dev.myshopify.com` |
-| App in Shopify Admin | `https://admin.shopify.com/store/bismuth-dev/apps/drop-leak-v2` |
+| App in Shopify Admin | `https://admin.shopify.com/store/bismuth-dev/apps/drop-analyzer` |
 | Express server | `http://localhost:3000` |
 | Vite dev server | `http://localhost:3001` |
 
