@@ -10,10 +10,10 @@ import {
   BlockStack,
   InlineStack,
   Link,
-  ChoiceList,
-  TextField,
   Tabs,
   Button,
+  TextField,
+  FormLayout,
 } from '@shopify/polaris';
 
 interface Order {
@@ -22,9 +22,24 @@ interface Order {
   email: string;
   created_at: string;
   total_price: string;
+  subtotal_price: string;
+  total_discounts: string;
+  total_line_items_price: string;
   currency: string;
   financial_status: string;
   tags: string;
+  customer?: {
+    id: number;
+    email: string;
+    orders_count: number;
+  } | null;
+  refunds?: Array<{
+    id: number;
+    created_at: string;
+    transactions: Array<{
+      amount: string;
+    }>;
+  }>;
   line_items: Array<{
     id: number;
     title: string;
@@ -54,6 +69,7 @@ interface ProductSummary {
   sellThroughRate: number;
   revenuePercentage: number;
   imageUrl?: string;
+  soldOutAt?: string; // Timestamp when variant sold out (reached 50 units)
 }
 
 interface AggregatedProductSummary {
@@ -68,11 +84,33 @@ interface AggregatedProductSummary {
   imageUrl?: string;
 }
 
-interface OrdersListProps {
-  shop: string;
+interface VendorSummary {
+  vendor: string;
+  productCount: number;
+  unitsSold: number;
+  totalRevenue: number;
+  currency: string;
+  revenuePercentage: number;
 }
 
-const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
+interface ColorSummary {
+  color: string;
+  variantCount: number;
+  unitsSold: number;
+  totalRevenue: number;
+  currency: string;
+  revenuePercentage: number;
+}
+
+interface OrdersListProps {
+  shop: string;
+  dropStartTime?: string;
+  dropEndTime?: string;
+  onCreateDrop?: (startDate: string, startTime: string, endDate: string, endTime: string) => void;
+  inventorySnapshot?: string | null; // JSON string: { [variantId: string]: number }
+}
+
+const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime, dropEndTime, onCreateDrop, inventorySnapshot }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -92,24 +130,43 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const [aggregatedSortDirection, setAggregatedSortDirection] = useState<'ascending' | 'descending'>('descending');
   const [selectedProductTab, setSelectedProductTab] = useState<number>(0);
 
-  // Filter states
-  const [dateRange, setDateRange] = useState<string[]>(['today']);
-  const [orderStatus, setOrderStatus] = useState<string[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  // Vendor summary (by vendor)
+  const [vendorSummary, setVendorSummary] = useState<VendorSummary[]>([]);
+  const [vendorSortColumn, setVendorSortColumn] = useState<number>(2); // Default to Units Sold
+  const [vendorSortDirection, setVendorSortDirection] = useState<'ascending' | 'descending'>('descending');
 
-  // Additional filter states
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  const [minPrice, setMinPrice] = useState<string>('');
-  const [maxPrice, setMaxPrice] = useState<string>('');
-  const [startTime, setStartTime] = useState<string>('');
-  const [endTime, setEndTime] = useState<string>('');
+  // Color summary (by color)
+  const [colorSummary, setColorSummary] = useState<ColorSummary[]>([]);
+  const [colorSortColumn, setColorSortColumn] = useState<number>(2); // Default to Units Sold
+  const [colorSortDirection, setColorSortDirection] = useState<'ascending' | 'descending'>('descending');
 
   // Product images state (keys can be numbers or strings from JSON)
   const [productImages, setProductImages] = useState<{ [key: string]: string }>({});
 
-  // Analytics state for conversion rate
-  const [totalSessions, setTotalSessions] = useState<number | null>(null);
+  // Inventory state
+  const [currentInventory, setCurrentInventory] = useState<{ [variantId: string]: number }>({});
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [isEstimatedInventory, setIsEstimatedInventory] = useState(false);
+
+  // Parse inventory snapshot if available
+  const parsedSnapshot: { [variantId: string]: number } | null = React.useMemo(() => {
+    if (inventorySnapshot) {
+      try {
+        return JSON.parse(inventorySnapshot);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }, [inventorySnapshot]);
+
+  // Filter state (only used when no drop time range is provided)
+  const isExploreMode = !dropStartTime && !dropEndTime;
+  const today = new Date().toISOString().split('T')[0];
+  const [filterStartDate, setFilterStartDate] = useState<string>(today);
+  const [filterStartTime, setFilterStartTime] = useState<string>('00:00');
+  const [filterEndDate, setFilterEndDate] = useState<string>(today);
+  const [filterEndTime, setFilterEndTime] = useState<string>('23:59');
 
   useEffect(() => {
     if (!shop) {
@@ -118,41 +175,36 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     }
 
     fetchOrders();
-    // Analytics disabled - ShopifyQL API not available for this store type
-    // fetchAnalytics();
   }, [shop]);
 
-  const fetchAnalytics = async () => {
-    try {
-      const response = await fetch(`/api/orders/analytics?shop=${encodeURIComponent(shop)}`);
-      const data = await response.json();
-
-      console.log('Analytics response:', JSON.stringify(data, null, 2));
-
-      if (data.success && data.analytics?.data?.shopifyqlQuery?.tableData?.rowData) {
-        const rowData = data.analytics.data.shopifyqlQuery.tableData.rowData;
-        console.log('Analytics rowData:', rowData);
-        if (rowData.length > 0 && rowData[0].length > 0) {
-          const sessions = parseInt(rowData[0][0], 10);
-          console.log('Parsed sessions:', sessions);
-          if (!isNaN(sessions)) {
-            setTotalSessions(sessions);
-          }
-        }
-      } else {
-        console.log('Analytics data structure not found. Keys:', Object.keys(data));
-        if (data.analytics) {
-          console.log('Analytics object keys:', Object.keys(data.analytics));
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching analytics:', error);
+  // Fetch current inventory for reverse calculation when no snapshot exists
+  useEffect(() => {
+    if (!shop || !dropStartTime || parsedSnapshot) {
+      // Don't fetch if: no shop, not in drop mode, or we have a snapshot
+      return;
     }
-  };
+
+    setInventoryLoading(true);
+    setIsEstimatedInventory(true);
+
+    fetch(`/api/orders/inventory?shop=${encodeURIComponent(shop)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.inventory) {
+          setCurrentInventory(data.inventory);
+        }
+      })
+      .catch(err => {
+        console.error('Error fetching current inventory:', err);
+      })
+      .finally(() => {
+        setInventoryLoading(false);
+      });
+  }, [shop, dropStartTime, parsedSnapshot]);
 
   useEffect(() => {
     applyFilters();
-  }, [orders, dateRange, orderStatus, selectedTags, startDate, endDate, minPrice, maxPrice, startTime, endTime]);
+  }, [orders, dropStartTime, dropEndTime, filterStartDate, filterStartTime, filterEndDate, filterEndTime]);
 
   useEffect(() => {
     if (filteredOrders.length >= 0) {
@@ -163,107 +215,26 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
   const applyFilters = () => {
     let filtered = [...orders];
 
-    // Apply tag filter
-    if (selectedTags.length > 0) {
-      filtered = filtered.filter(order => {
-        if (!order.tags) return false;
-        const orderTags = order.tags.split(',').map(t => t.trim().toLowerCase());
-        return selectedTags.some(tag => orderTags.includes(tag.toLowerCase()));
-      });
+    // Apply drop time range filter (from drop definition)
+    if (dropStartTime) {
+      const dropStart = new Date(dropStartTime);
+      filtered = filtered.filter(order => new Date(order.created_at) >= dropStart);
+    }
+    if (dropEndTime) {
+      const dropEnd = new Date(dropEndTime);
+      filtered = filtered.filter(order => new Date(order.created_at) <= dropEnd);
     }
 
-    // Apply date range filter
-    if (dateRange.length > 0) {
-      const now = new Date();
-      let startOfPeriod = new Date();
-
-      dateRange.forEach(preset => {
-        switch (preset) {
-          case 'today':
-            startOfPeriod.setHours(0, 0, 0, 0);
-            filtered = filtered.filter(order => new Date(order.created_at) >= startOfPeriod);
-            break;
-          case 'yesterday':
-            startOfPeriod.setDate(now.getDate() - 1);
-            startOfPeriod.setHours(0, 0, 0, 0);
-            const endOfYesterday = new Date(startOfPeriod);
-            endOfYesterday.setHours(23, 59, 59, 999);
-            filtered = filtered.filter(order => {
-              const orderDate = new Date(order.created_at);
-              return orderDate >= startOfPeriod && orderDate <= endOfYesterday;
-            });
-            break;
-          case 'last7days':
-            startOfPeriod.setDate(now.getDate() - 7);
-            filtered = filtered.filter(order => new Date(order.created_at) >= startOfPeriod);
-            break;
-          case 'last30days':
-            startOfPeriod.setDate(now.getDate() - 30);
-            filtered = filtered.filter(order => new Date(order.created_at) >= startOfPeriod);
-            break;
-          case 'thisweek':
-            const dayOfWeek = now.getDay();
-            startOfPeriod.setDate(now.getDate() - dayOfWeek);
-            startOfPeriod.setHours(0, 0, 0, 0);
-            filtered = filtered.filter(order => new Date(order.created_at) >= startOfPeriod);
-            break;
-          case 'thismonth':
-            startOfPeriod = new Date(now.getFullYear(), now.getMonth(), 1);
-            filtered = filtered.filter(order => new Date(order.created_at) >= startOfPeriod);
-            break;
-        }
-      });
-    }
-
-    // Apply custom date range (always, independent of dropdown)
-    if (startDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      filtered = filtered.filter(order => new Date(order.created_at) >= start);
-    }
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      filtered = filtered.filter(order => new Date(order.created_at) <= end);
-    }
-
-    // Apply status filter
-    if (orderStatus.length > 0) {
-      filtered = filtered.filter(order => orderStatus.includes(order.financial_status));
-    }
-
-    // Apply price range
-    if (minPrice) {
-      const min = parseFloat(minPrice);
-      filtered = filtered.filter(order => parseFloat(order.total_price) >= min);
-    }
-    if (maxPrice) {
-      const max = parseFloat(maxPrice);
-      filtered = filtered.filter(order => parseFloat(order.total_price) <= max);
-    }
-
-    // Apply time range (custom only)
-    if (startTime || endTime) {
-      filtered = filtered.filter(order => {
-        const orderDate = new Date(order.created_at);
-        const orderHour = orderDate.getHours();
-        const orderMinute = orderDate.getMinutes();
-        const orderTimeInMinutes = orderHour * 60 + orderMinute;
-
-        if (startTime) {
-          const [startHour, startMin] = startTime.split(':').map(Number);
-          const startTimeInMinutes = startHour * 60 + startMin;
-          if (orderTimeInMinutes < startTimeInMinutes) return false;
-        }
-
-        if (endTime) {
-          const [endHour, endMin] = endTime.split(':').map(Number);
-          const endTimeInMinutes = endHour * 60 + endMin;
-          if (orderTimeInMinutes > endTimeInMinutes) return false;
-        }
-
-        return true;
-      });
+    // Apply manual filters (explore mode on dashboard)
+    if (isExploreMode) {
+      if (filterStartDate) {
+        const startDateTime = new Date(`${filterStartDate}T${filterStartTime}`);
+        filtered = filtered.filter(order => new Date(order.created_at) >= startDateTime);
+      }
+      if (filterEndDate) {
+        const endDateTime = new Date(`${filterEndDate}T${filterEndTime}`);
+        filtered = filtered.filter(order => new Date(order.created_at) <= endDateTime);
+      }
     }
 
     setFilteredOrders(filtered);
@@ -324,23 +295,46 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     applySorting(index, direction);
   };
 
-  const handleFiltersClearAll = useCallback(() => {
-    setDateRange([]);
-    setOrderStatus([]);
-    setSelectedTags([]);
-    setStartDate('');
-    setEndDate('');
-    setMinPrice('');
-    setMaxPrice('');
-    setStartTime('');
-    setEndTime('');
-  }, []);
+  // Helper to get initial inventory for a variant
+  const getInitialInventory = useCallback((variantId: number, unitsSold: number): number => {
+    const variantIdStr = String(variantId);
+
+    // Priority 1: Use snapshot if available (accurate)
+    if (parsedSnapshot && parsedSnapshot[variantIdStr] !== undefined) {
+      return parsedSnapshot[variantIdStr];
+    }
+
+    // Priority 2: Reverse calculate from current inventory (estimated)
+    if (currentInventory[variantIdStr] !== undefined) {
+      // Initial inventory = current inventory + units sold during drop
+      return currentInventory[variantIdStr] + unitsSold;
+    }
+
+    // Fallback: Use a reasonable default (will show as estimated)
+    return 50;
+  }, [parsedSnapshot, currentInventory]);
 
   // Generate product summary from filtered orders
   const generateProductSummary = useCallback(() => {
-    const productMap = new Map<string, ProductSummary>();
+    const productMap = new Map<string, ProductSummary & { runningTotal: number }>();
 
-    filteredOrders.forEach((order) => {
+    // Sort orders by time to track when variants sold out
+    const sortedByTime = [...filteredOrders].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+    // First pass: calculate total units sold per variant
+    const unitsSoldByVariant = new Map<number, number>();
+    sortedByTime.forEach((order) => {
+      order.line_items?.forEach((item) => {
+        if (item.variant_id) {
+          const current = unitsSoldByVariant.get(item.variant_id) || 0;
+          unitsSoldByVariant.set(item.variant_id, current + item.quantity);
+        }
+      });
+    });
+
+    sortedByTime.forEach((order) => {
       if (!order.line_items || order.line_items.length === 0) {
         return;
       }
@@ -364,18 +358,29 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
           size = parts[1] || '';
         }
 
+        // Get initial inventory for this variant
+        const totalSoldForVariant = unitsSoldByVariant.get(item.variant_id) || 0;
+        const initialInventory = getInitialInventory(item.variant_id, totalSoldForVariant);
+
         if (productMap.has(key)) {
           const existing = productMap.get(key)!;
-          existing.unitsSold += item.quantity;
-          existing.remainingInventory = 50 - existing.unitsSold;
+          const previousTotal = existing.runningTotal;
+          existing.runningTotal += item.quantity;
+          existing.unitsSold = existing.runningTotal;
+          existing.remainingInventory = Math.max(0, initialInventory - existing.unitsSold);
           existing.totalRevenue += parseFloat(item.price) * item.quantity;
-          existing.sellThroughRate = (existing.unitsSold / 50) * 100;
+          existing.sellThroughRate = initialInventory > 0 ? (existing.unitsSold / initialInventory) * 100 : 0;
+
+          // Check if this order caused the variant to sell out
+          if (previousTotal < initialInventory && existing.runningTotal >= initialInventory && !existing.soldOutAt) {
+            existing.soldOutAt = order.created_at;
+          }
         } else {
           const unitsSold = item.quantity;
-          const remainingInventory = 50 - unitsSold;
-          const sellThroughRate = (unitsSold / 50) * 100;
+          const remainingInventory = Math.max(0, initialInventory - unitsSold);
+          const sellThroughRate = initialInventory > 0 ? (unitsSold / initialInventory) * 100 : 0;
 
-          productMap.set(key, {
+          const entry: ProductSummary & { runningTotal: number } = {
             productId: item.product_id,
             variantId: item.variant_id,
             productName: item.title,
@@ -388,26 +393,29 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             totalRevenue: parseFloat(item.price) * item.quantity,
             currency: order.currency,
             sellThroughRate: sellThroughRate,
-            revenuePercentage: 0, // Will be calculated below
+            revenuePercentage: 0,
             imageUrl: undefined,
-          });
+            runningTotal: unitsSold,
+            soldOutAt: unitsSold >= initialInventory ? order.created_at : undefined,
+          };
+
+          productMap.set(key, entry);
         }
       });
     });
 
     // Calculate total revenue from all products
-    const summary = Array.from(productMap.values());
+    const summary = Array.from(productMap.values()).map(({ runningTotal, ...rest }) => rest);
     const totalRevenue = summary.reduce((sum, product) => sum + product.totalRevenue, 0);
 
     // Update revenue percentage and image URL for each product
-    // Note: JSON keys are strings, so we look up by string key
     summary.forEach(product => {
       product.revenuePercentage = totalRevenue > 0 ? (product.totalRevenue / totalRevenue) * 100 : 0;
       product.imageUrl = productImages[String(product.productId)];
     });
 
     setProductSummary(summary);
-  }, [filteredOrders, productImages]);
+  }, [filteredOrders, productImages, getInitialInventory]);
 
   // Update product summary when filtered orders change
   useEffect(() => {
@@ -416,17 +424,32 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
   // Generate aggregated product summary (by product, not variant)
   const generateAggregatedProductSummary = useCallback(() => {
-    // First, count unique variants per product from the variant-level summary
-    const variantCountByProduct = new Map<string, Set<number>>();
-    productSummary.forEach(variant => {
-      const productName = variant.productName;
-      if (!variantCountByProduct.has(productName)) {
-        variantCountByProduct.set(productName, new Set());
-      }
-      variantCountByProduct.get(productName)!.add(variant.variantId);
+    // First, collect initial inventory per variant and calculate totals per product
+    const variantsByProduct = new Map<string, Map<number, number>>(); // productName -> (variantId -> initialInventory)
+    const unitsSoldByVariant = new Map<number, number>();
+
+    // Calculate units sold per variant
+    filteredOrders.forEach((order) => {
+      order.line_items?.forEach((item) => {
+        if (item.variant_id) {
+          const current = unitsSoldByVariant.get(item.variant_id) || 0;
+          unitsSoldByVariant.set(item.variant_id, current + item.quantity);
+        }
+      });
     });
 
-    const productMap = new Map<string, AggregatedProductSummary & { variantCount: number }>();
+    // Group variants by product and get their initial inventory
+    productSummary.forEach(variant => {
+      const productName = variant.productName;
+      if (!variantsByProduct.has(productName)) {
+        variantsByProduct.set(productName, new Map());
+      }
+      const totalSold = unitsSoldByVariant.get(variant.variantId) || variant.unitsSold;
+      const initialInv = getInitialInventory(variant.variantId, totalSold);
+      variantsByProduct.get(productName)!.set(variant.variantId, initialInv);
+    });
+
+    const productMap = new Map<string, AggregatedProductSummary & { variantCount: number; totalInitialStock: number }>();
 
     filteredOrders.forEach((order) => {
       if (!order.line_items || order.line_items.length === 0) {
@@ -440,19 +463,23 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
 
         // Use product name as key to aggregate all variants
         const key = item.title;
-        const variantCount = variantCountByProduct.get(key)?.size || 1;
-        const totalInitialStock = 50 * variantCount;
+        const variantsMap = variantsByProduct.get(key);
+        const variantCount = variantsMap?.size || 1;
+        // Sum up initial inventory for all variants of this product
+        const totalInitialStock = variantsMap
+          ? Array.from(variantsMap.values()).reduce((sum, inv) => sum + inv, 0)
+          : getInitialInventory(item.variant_id, unitsSoldByVariant.get(item.variant_id) || item.quantity);
 
         if (productMap.has(key)) {
           const existing = productMap.get(key)!;
           existing.unitsSold += item.quantity;
-          existing.remainingInventory = totalInitialStock - existing.unitsSold;
+          existing.remainingInventory = Math.max(0, existing.totalInitialStock - existing.unitsSold);
           existing.totalRevenue += parseFloat(item.price) * item.quantity;
-          existing.sellThroughRate = (existing.unitsSold / totalInitialStock) * 100;
+          existing.sellThroughRate = existing.totalInitialStock > 0 ? (existing.unitsSold / existing.totalInitialStock) * 100 : 0;
         } else {
           const unitsSold = item.quantity;
-          const remainingInventory = totalInitialStock - unitsSold;
-          const sellThroughRate = (unitsSold / totalInitialStock) * 100;
+          const remainingInventory = Math.max(0, totalInitialStock - unitsSold);
+          const sellThroughRate = totalInitialStock > 0 ? (unitsSold / totalInitialStock) * 100 : 0;
 
           productMap.set(key, {
             productId: item.product_id,
@@ -465,12 +492,13 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
             revenuePercentage: 0,
             imageUrl: undefined,
             variantCount: variantCount,
+            totalInitialStock: totalInitialStock,
           });
         }
       });
     });
 
-    const summary = Array.from(productMap.values());
+    const summary = Array.from(productMap.values()).map(({ totalInitialStock, ...rest }) => rest);
     const totalRevenue = summary.reduce((sum, product) => sum + product.totalRevenue, 0);
 
     summary.forEach(product => {
@@ -479,12 +507,137 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     });
 
     setAggregatedProductSummary(summary);
-  }, [filteredOrders, productImages, productSummary]);
+  }, [filteredOrders, productImages, productSummary, getInitialInventory]);
 
   // Update aggregated product summary when filtered orders change
   useEffect(() => {
     generateAggregatedProductSummary();
   }, [generateAggregatedProductSummary]);
+
+  // Generate vendor summary (by vendor)
+  const generateVendorSummary = useCallback(() => {
+    const vendorMap = new Map<string, VendorSummary & { productIds: Set<number> }>();
+
+    filteredOrders.forEach((order) => {
+      if (!order.line_items || order.line_items.length === 0) {
+        return;
+      }
+
+      order.line_items.forEach((item) => {
+        const vendor = item.vendor || 'Unknown';
+
+        if (vendorMap.has(vendor)) {
+          const existing = vendorMap.get(vendor)!;
+          existing.unitsSold += item.quantity;
+          existing.totalRevenue += parseFloat(item.price) * item.quantity;
+          if (item.product_id) {
+            existing.productIds.add(item.product_id);
+          }
+        } else {
+          const productIds = new Set<number>();
+          if (item.product_id) {
+            productIds.add(item.product_id);
+          }
+
+          vendorMap.set(vendor, {
+            vendor,
+            productCount: 0,
+            unitsSold: item.quantity,
+            totalRevenue: parseFloat(item.price) * item.quantity,
+            currency: order.currency,
+            revenuePercentage: 0,
+            productIds,
+          });
+        }
+      });
+    });
+
+    const summary = Array.from(vendorMap.values()).map(v => ({
+      vendor: v.vendor,
+      productCount: v.productIds.size,
+      unitsSold: v.unitsSold,
+      totalRevenue: v.totalRevenue,
+      currency: v.currency,
+      revenuePercentage: 0,
+    }));
+
+    const totalRevenue = summary.reduce((sum, v) => sum + v.totalRevenue, 0);
+    summary.forEach(v => {
+      v.revenuePercentage = totalRevenue > 0 ? (v.totalRevenue / totalRevenue) * 100 : 0;
+    });
+
+    setVendorSummary(summary);
+  }, [filteredOrders]);
+
+  // Update vendor summary when filtered orders change
+  useEffect(() => {
+    generateVendorSummary();
+  }, [generateVendorSummary]);
+
+  // Generate color summary (by color)
+  const generateColorSummary = useCallback(() => {
+    const colorMap = new Map<string, ColorSummary & { variantIds: Set<number> }>();
+
+    filteredOrders.forEach((order) => {
+      if (!order.line_items || order.line_items.length === 0) {
+        return;
+      }
+
+      order.line_items.forEach((item) => {
+        // Parse color from variant_title (format: "Color / Size")
+        let color = 'Unknown';
+        if (item.variant_title) {
+          const parts = item.variant_title.split('/').map(part => part.trim());
+          color = parts[0] || 'Unknown';
+        }
+
+        if (colorMap.has(color)) {
+          const existing = colorMap.get(color)!;
+          existing.unitsSold += item.quantity;
+          existing.totalRevenue += parseFloat(item.price) * item.quantity;
+          if (item.variant_id) {
+            existing.variantIds.add(item.variant_id);
+          }
+        } else {
+          const variantIds = new Set<number>();
+          if (item.variant_id) {
+            variantIds.add(item.variant_id);
+          }
+
+          colorMap.set(color, {
+            color,
+            variantCount: 0,
+            unitsSold: item.quantity,
+            totalRevenue: parseFloat(item.price) * item.quantity,
+            currency: order.currency,
+            revenuePercentage: 0,
+            variantIds,
+          });
+        }
+      });
+    });
+
+    const summary = Array.from(colorMap.values()).map(c => ({
+      color: c.color,
+      variantCount: c.variantIds.size,
+      unitsSold: c.unitsSold,
+      totalRevenue: c.totalRevenue,
+      currency: c.currency,
+      revenuePercentage: 0,
+    }));
+
+    const totalRevenue = summary.reduce((sum, c) => sum + c.totalRevenue, 0);
+    summary.forEach(c => {
+      c.revenuePercentage = totalRevenue > 0 ? (c.totalRevenue / totalRevenue) * 100 : 0;
+    });
+
+    setColorSummary(summary);
+  }, [filteredOrders]);
+
+  // Update color summary when filtered orders change
+  useEffect(() => {
+    generateColorSummary();
+  }, [generateColorSummary]);
 
   // Fetch product images when orders are loaded
   useEffect(() => {
@@ -569,6 +722,33 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     });
   };
 
+  const formatDuration = (startTime: string, endTime: string) => {
+    const start = new Date(startTime).getTime();
+    const end = new Date(endTime).getTime();
+    const durationMs = end - start;
+
+    if (durationMs < 0) return 'N/A';
+
+    const seconds = Math.floor(durationMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) {
+      const remainingHours = hours % 24;
+      return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+    }
+    if (hours > 0) {
+      const remainingMinutes = minutes % 60;
+      return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+    }
+    if (minutes > 0) {
+      const remainingSeconds = seconds % 60;
+      return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+    }
+    return `${seconds}s`;
+  };
+
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: 'success' | 'attention' | 'critical' | 'info' } = {
       paid: 'success',
@@ -584,25 +764,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
       </Badge>
     );
   };
-
-  // Get all unique tags from orders - MUST be before early returns
-  const availableTags = React.useMemo(() => {
-    const tagSet = new Set<string>();
-    orders.forEach(order => {
-      if (order.tags) {
-        order.tags.split(',').forEach(tag => {
-          const trimmed = tag.trim();
-          if (trimmed) tagSet.add(trimmed);
-        });
-      }
-    });
-    return Array.from(tagSet).sort();
-  }, [orders]);
-
-  // Check if any filters are active - MUST be before early returns
-  const hasActiveFilters = dateRange.length > 0 || orderStatus.length > 0 ||
-    selectedTags.length > 0 || startDate || endDate ||
-    minPrice || maxPrice || startTime || endTime;
 
   if (loading) {
     return (
@@ -813,23 +974,148 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     setAggregatedSortDirection(direction);
   };
 
+  // Sort vendor summary
+  const sortedVendorSummary = [...vendorSummary].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+    const direction = vendorSortDirection;
+
+    switch (vendorSortColumn) {
+      case 0: // Row index (not sortable)
+        return 0;
+      case 1: // Vendor name
+        aValue = a.vendor.toLowerCase();
+        bValue = b.vendor.toLowerCase();
+        break;
+      case 2: // Products
+        aValue = a.productCount;
+        bValue = b.productCount;
+        break;
+      case 3: // Units sold
+        aValue = a.unitsSold;
+        bValue = b.unitsSold;
+        break;
+      case 4: // Total revenue
+        aValue = a.totalRevenue;
+        bValue = b.totalRevenue;
+        break;
+      case 5: // Revenue percentage
+        aValue = a.revenuePercentage;
+        bValue = b.revenuePercentage;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+    return 0;
+  });
+
+  // Column headings for Vendor Summary table
+  const vendorHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Vendor' },
+    { title: 'Products' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Vendor Summary table
+  const handleVendorSort = (index: number, direction: 'ascending' | 'descending') => {
+    setVendorSortColumn(index);
+    setVendorSortDirection(direction);
+  };
+
+  // Sort color summary
+  const sortedColorSummary = [...colorSummary].sort((a, b) => {
+    let aValue: any;
+    let bValue: any;
+    const direction = colorSortDirection;
+
+    switch (colorSortColumn) {
+      case 0: // Row index (not sortable)
+        return 0;
+      case 1: // Color name
+        aValue = a.color.toLowerCase();
+        bValue = b.color.toLowerCase();
+        break;
+      case 2: // Variants
+        aValue = a.variantCount;
+        bValue = b.variantCount;
+        break;
+      case 3: // Units sold
+        aValue = a.unitsSold;
+        bValue = b.unitsSold;
+        break;
+      case 4: // Total revenue
+        aValue = a.totalRevenue;
+        bValue = b.totalRevenue;
+        break;
+      case 5: // Revenue percentage
+        aValue = a.revenuePercentage;
+        bValue = b.revenuePercentage;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+    return 0;
+  });
+
+  // Column headings for Color Summary table
+  const colorHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Color' },
+    { title: 'Variants' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Color Summary table
+  const handleColorSort = (index: number, direction: 'ascending' | 'descending') => {
+    setColorSortColumn(index);
+    setColorSortDirection(direction);
+  };
+
   // Tabs for Product Summary section
   const productSummaryTabs = [
     { id: 'by-variant', content: 'By Variant' },
     { id: 'by-product', content: 'By Product' },
+    { id: 'by-color', content: 'By Color' },
+    { id: 'by-vendor', content: 'By Vendor' },
   ];
 
   // Calculate summary metrics
   const totalOrders = sortedOrders.length;
-  const uniqueCustomers = new Set(sortedOrders.map(order => order.email).filter(Boolean)).size;
-  const totalRevenue = sortedOrders.reduce((sum, order) => sum + parseFloat(order.total_price), 0);
   const totalItemsSold = sortedOrders.reduce((sum, order) =>
     sum + order.line_items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
-  const conversionRate = totalSessions && totalSessions > 0
-    ? ((totalOrders / totalSessions) * 100).toFixed(2)
-    : null;
 
-  // Calculate top 3 best-selling products (aggregated by product, not variant)
+  // Sales metrics
+  const grossSales = sortedOrders.reduce((sum, order) =>
+    sum + parseFloat(order.total_line_items_price || order.total_price || '0'), 0);
+  const totalDiscounts = sortedOrders.reduce((sum, order) =>
+    sum + parseFloat(order.total_discounts || '0'), 0);
+  const totalRefunds = sortedOrders.reduce((sum, order) => {
+    if (!order.refunds || order.refunds.length === 0) return sum;
+    return sum + order.refunds.reduce((refundSum, refund) =>
+      refundSum + refund.transactions.reduce((txSum, tx) => txSum + parseFloat(tx.amount || '0'), 0), 0);
+  }, 0);
+  const refundedOrdersCount = sortedOrders.filter(order => order.refunds && order.refunds.length > 0).length;
+  const netSales = grossSales - totalDiscounts - totalRefunds;
+  const avgOrderValue = totalOrders > 0 ? netSales / totalOrders : 0;
+
+  // Customer metrics
+  const uniqueCustomers = new Set(sortedOrders.map(order => order.email).filter(Boolean)).size;
+  const newCustomers = sortedOrders.filter(order =>
+    order.customer && order.customer.orders_count === 1).length;
+  const returningCustomers = sortedOrders.filter(order =>
+    order.customer && order.customer.orders_count > 1).length;
+  // Calculate top 4 best-selling products (aggregated by product, not variant)
   const topProducts = (() => {
     const productTotals = new Map<string, { title: string; productId: number; unitsSold: number }>();
 
@@ -887,122 +1173,156 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
     document.body.removeChild(link);
   };
 
+  // Quick date preset functions
+  const setPresetToday = () => {
+    const today = new Date().toISOString().split('T')[0];
+    setFilterStartDate(today);
+    setFilterStartTime('00:00');
+    setFilterEndDate(today);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetYesterday = () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    setFilterStartDate(yesterdayStr);
+    setFilterStartTime('00:00');
+    setFilterEndDate(yesterdayStr);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetThisWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - dayOfWeek); // Sunday
+    const today = now.toISOString().split('T')[0];
+    setFilterStartDate(startOfWeek.toISOString().split('T')[0]);
+    setFilterStartTime('00:00');
+    setFilterEndDate(today);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetLastWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const startOfLastWeek = new Date(now);
+    startOfLastWeek.setDate(now.getDate() - dayOfWeek - 7); // Last Sunday
+    const endOfLastWeek = new Date(startOfLastWeek);
+    endOfLastWeek.setDate(startOfLastWeek.getDate() + 6); // Last Saturday
+    setFilterStartDate(startOfLastWeek.toISOString().split('T')[0]);
+    setFilterStartTime('00:00');
+    setFilterEndDate(endOfLastWeek.toISOString().split('T')[0]);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetThisMonth = () => {
+    const now = new Date();
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const today = now.toISOString().split('T')[0];
+    setFilterStartDate(firstOfMonth.toISOString().split('T')[0]);
+    setFilterStartTime('00:00');
+    setFilterEndDate(today);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetLastMonth = () => {
+    const now = new Date();
+    const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    setFilterStartDate(firstOfLastMonth.toISOString().split('T')[0]);
+    setFilterStartTime('00:00');
+    setFilterEndDate(lastOfLastMonth.toISOString().split('T')[0]);
+    setFilterEndTime('23:59');
+  };
+
+  const setPresetAll = () => {
+    setFilterStartDate('');
+    setFilterStartTime('00:00');
+    setFilterEndDate('');
+    setFilterEndTime('23:59');
+  };
+
   return (
     <BlockStack gap="400">
-      {/* Filters Section */}
-      <Card>
-        <BlockStack gap="400">
-          <InlineStack align="space-between">
-            <Text as="h2" variant="headingMd">
-              Filters
-            </Text>
-            {hasActiveFilters && (
-              <Button variant="plain" onClick={handleFiltersClearAll}>
-                Clear all filters
-              </Button>
-            )}
-          </InlineStack>
-
-          <InlineStack gap="400" wrap>
-            <div style={{ minWidth: '150px' }}>
-              <ChoiceList
-                title="Date range"
-                choices={[
-                  { label: 'Today', value: 'today' },
-                  { label: 'Yesterday', value: 'yesterday' },
-                  { label: 'Last 7 days', value: 'last7days' },
-                  { label: 'Last 30 days', value: 'last30days' },
-                  { label: 'This week', value: 'thisweek' },
-                  { label: 'This month', value: 'thismonth' },
-                ]}
-                selected={dateRange}
-                onChange={setDateRange}
-              />
-            </div>
-            <div style={{ minWidth: '150px' }}>
-              <ChoiceList
-                title="Order status"
-                choices={[
-                  { label: 'Paid', value: 'paid' },
-                  { label: 'Pending', value: 'pending' },
-                  { label: 'Authorized', value: 'authorized' },
-                  { label: 'Refunded', value: 'refunded' },
-                  { label: 'Voided', value: 'voided' },
-                ]}
-                selected={orderStatus}
-                onChange={setOrderStatus}
-                allowMultiple
-              />
-            </div>
-            {availableTags.length > 0 && (
-              <div style={{ minWidth: '150px' }}>
-                <ChoiceList
-                  title="Tags"
-                  choices={availableTags.map(tag => ({ label: tag, value: tag }))}
-                  selected={selectedTags}
-                  onChange={setSelectedTags}
-                  allowMultiple
+      {/* Filters Section (only in explore mode) */}
+      {isExploreMode && (
+        <Card>
+          <BlockStack gap="400">
+            <InlineStack align="space-between">
+              <Text as="h2" variant="headingMd">
+                Explore Orders
+              </Text>
+              <InlineStack gap="200">
+                <Button onClick={setPresetToday} size="slim" variant={filterStartDate === new Date().toISOString().split('T')[0] && filterEndDate === new Date().toISOString().split('T')[0] ? 'primary' : 'secondary'}>
+                  Today
+                </Button>
+                <Button onClick={setPresetYesterday} size="slim">
+                  Yesterday
+                </Button>
+                <Button onClick={setPresetThisWeek} size="slim">
+                  This Week
+                </Button>
+                <Button onClick={setPresetLastWeek} size="slim">
+                  Last Week
+                </Button>
+                <Button onClick={setPresetThisMonth} size="slim">
+                  This Month
+                </Button>
+                <Button onClick={setPresetLastMonth} size="slim">
+                  Last Month
+                </Button>
+                <Button onClick={setPresetAll} size="slim">
+                  All
+                </Button>
+              </InlineStack>
+            </InlineStack>
+            <FormLayout>
+              <FormLayout.Group>
+                <TextField
+                  label="Start Date"
+                  type="date"
+                  value={filterStartDate}
+                  onChange={setFilterStartDate}
+                  autoComplete="off"
                 />
-              </div>
+                <TextField
+                  label="Start Time"
+                  type="time"
+                  value={filterStartTime}
+                  onChange={setFilterStartTime}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="End Date"
+                  type="date"
+                  value={filterEndDate}
+                  onChange={setFilterEndDate}
+                  autoComplete="off"
+                />
+                <TextField
+                  label="End Time"
+                  type="time"
+                  value={filterEndTime}
+                  onChange={setFilterEndTime}
+                  autoComplete="off"
+                />
+              </FormLayout.Group>
+            </FormLayout>
+            {onCreateDrop && filterStartDate && filterEndDate && (
+              <InlineStack align="end">
+                <Button
+                  variant="primary"
+                  onClick={() => onCreateDrop(filterStartDate, filterStartTime, filterEndDate, filterEndTime)}
+                >
+                  Create Drop from Selection
+                </Button>
+              </InlineStack>
             )}
-          </InlineStack>
-
-          <InlineStack gap="400" wrap={false}>
-            <InlineStack gap="200">
-              <TextField
-                label="Start date"
-                type="date"
-                value={startDate}
-                onChange={setStartDate}
-                autoComplete="off"
-              />
-              <TextField
-                label="End date"
-                type="date"
-                value={endDate}
-                onChange={setEndDate}
-                autoComplete="off"
-              />
-            </InlineStack>
-            <InlineStack gap="200">
-              <TextField
-                label="Start time"
-                type="time"
-                value={startTime}
-                onChange={setStartTime}
-                autoComplete="off"
-              />
-              <TextField
-                label="End time"
-                type="time"
-                value={endTime}
-                onChange={setEndTime}
-                autoComplete="off"
-              />
-            </InlineStack>
-            <InlineStack gap="200">
-              <TextField
-                label="Min price"
-                type="number"
-                value={minPrice}
-                onChange={setMinPrice}
-                prefix="$"
-                autoComplete="off"
-                placeholder="Min"
-              />
-              <TextField
-                label="Max price"
-                type="number"
-                value={maxPrice}
-                onChange={setMaxPrice}
-                prefix="$"
-                autoComplete="off"
-                placeholder="Max"
-              />
-            </InlineStack>
-          </InlineStack>
-        </BlockStack>
-      </Card>
+          </BlockStack>
+        </Card>
+      )}
 
       {/* Summary Metrics Section */}
       <Card>
@@ -1010,49 +1330,91 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
           <Text as="h2" variant="headingMd">
             Summary
           </Text>
-          <InlineStack gap="800" align="start">
+          {/* Row 1: Sales Metrics */}
+          <InlineStack gap="800" align="start" wrap>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
-                Customers
+                Gross Sales
               </Text>
-              <Text as="p" variant="headingXl">
-                {uniqueCustomers.toLocaleString()}
+              <Text as="p" variant="headingLg">
+                {formatCurrency(grossSales)}
               </Text>
             </BlockStack>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
+                Discounts
+              </Text>
+              <Text as="p" variant="headingLg" tone={totalDiscounts > 0 ? 'caution' : undefined}>
+                -{formatCurrency(totalDiscounts)}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Returns
+              </Text>
+              <Text as="p" variant="headingLg" tone={refundedOrdersCount > 0 ? 'critical' : undefined}>
+                {refundedOrdersCount.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Net Sales
+              </Text>
+              <Text as="p" variant="headingLg" fontWeight="bold">
+                {formatCurrency(netSales)}
+              </Text>
+            </BlockStack>
+          </InlineStack>
+          {/* Row 2: Orders & Customers */}
+          <InlineStack gap="800" align="start" wrap>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
                 Orders
               </Text>
-              <Text as="p" variant="headingXl">
+              <Text as="p" variant="headingLg">
                 {totalOrders.toLocaleString()}
               </Text>
             </BlockStack>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
-                Items
+                Avg Order Value
               </Text>
-              <Text as="p" variant="headingXl">
+              <Text as="p" variant="headingLg">
+                {formatCurrency(avgOrderValue)}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Items Sold
+              </Text>
+              <Text as="p" variant="headingLg">
                 {totalItemsSold.toLocaleString()}
               </Text>
             </BlockStack>
             <BlockStack gap="100">
               <Text as="p" variant="bodySm" tone="subdued">
-                Revenue
+                Customers
               </Text>
-              <Text as="p" variant="headingXl">
-                {formatCurrency(totalRevenue)}
+              <Text as="p" variant="headingLg">
+                {uniqueCustomers.toLocaleString()}
               </Text>
             </BlockStack>
-            {conversionRate !== null && (
-              <BlockStack gap="100">
-                <Text as="p" variant="bodySm" tone="subdued">
-                  Conversion Rate
-                </Text>
-                <Text as="p" variant="headingXl">
-                  {conversionRate}%
-                </Text>
-              </BlockStack>
-            )}
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                New Customers
+              </Text>
+              <Text as="p" variant="headingLg" tone="success">
+                {newCustomers.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Returning
+              </Text>
+              <Text as="p" variant="headingLg">
+                {returningCustomers.toLocaleString()}
+              </Text>
+            </BlockStack>
           </InlineStack>
           {topProducts.length > 0 && (
             <BlockStack gap="200">
@@ -1130,8 +1492,20 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         </BlockStack>
       </Card>
 
-      {/* Sold Out Variants Section */}
-      {sortedProductSummary.filter(p => p.remainingInventory <= 0).length > 0 && (
+      {/* Inventory Loading Indicator */}
+      {inventoryLoading && !isExploreMode && (
+        <Card>
+          <InlineStack gap="200" blockAlign="center">
+            <Spinner size="small" />
+            <Text as="span" variant="bodySm" tone="subdued">
+              Loading current inventory for sell-through calculations...
+            </Text>
+          </InlineStack>
+        </Card>
+      )}
+
+      {/* Sold Out Variants Section (only in drop analysis mode) */}
+      {!isExploreMode && sortedProductSummary.filter(p => p.remainingInventory <= 0).length > 0 && (
         <Card>
           <BlockStack gap="400">
             <InlineStack gap="200" align="start" blockAlign="center">
@@ -1194,6 +1568,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                       <Text as="p" variant="bodySm" tone="critical">
                         {product.unitsSold} sold (100%)
                       </Text>
+                      {product.soldOutAt && dropStartTime && (
+                        <Text as="p" variant="bodySm" tone="success">
+                          Sold out in {formatDuration(dropStartTime, product.soldOutAt)}
+                        </Text>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1202,14 +1581,22 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
         </Card>
       )}
 
-      {/* Product Sales Summary Section */}
-      {productSummary.length > 0 && (
+      {/* Product Sales Summary Section (only in drop analysis mode) */}
+      {!isExploreMode && productSummary.length > 0 && (
         <Card>
           <BlockStack gap="400">
             <InlineStack align="space-between">
-              <Text as="h2" variant="headingMd">
-                Product Sales Summary
-              </Text>
+              <InlineStack gap="200" blockAlign="center">
+                <Text as="h2" variant="headingMd">
+                  Product Sales Summary
+                </Text>
+                {isEstimatedInventory && !parsedSnapshot && (
+                  <Badge tone="attention">Estimated Inventory</Badge>
+                )}
+                {parsedSnapshot && (
+                  <Badge tone="success">Snapshot Inventory</Badge>
+                )}
+              </InlineStack>
               <Button onClick={exportToCSV}>
                 Export CSV
               </Button>
@@ -1284,7 +1671,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                     </IndexTable>
                   </div>
                 </>
-              ) : (
+              ) : selectedProductTab === 1 ? (
                 <>
                   <Text as="p" variant="bodyMd" fontWeight="semibold">
                     {aggregatedProductSummary.length} products from {sortedOrders.length} orders
@@ -1349,7 +1736,83 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop }) => {
                     </IndexTable>
                   </div>
                 </>
-              )}
+              ) : selectedProductTab === 2 ? (
+                <>
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">
+                    {colorSummary.length} colors from {sortedOrders.length} orders
+                  </Text>
+                  <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                    <IndexTable
+                      resourceName={{ singular: 'color', plural: 'colors' }}
+                      itemCount={sortedColorSummary.length}
+                      headings={colorHeadings}
+                      selectable={false}
+                      sortable={[false, true, true, true, true, true]}
+                      defaultSortDirection="descending"
+                      sortDirection={colorSortDirection}
+                      sortColumnIndex={colorSortColumn}
+                      onSort={handleColorSort}
+                    >
+                      {sortedColorSummary.map((color, index) => (
+                        <IndexTable.Row
+                          id={color.color}
+                          key={color.color}
+                          position={index}
+                        >
+                          <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            <Text as="span" fontWeight="semibold">{color.color}</Text>
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{color.variantCount}</IndexTable.Cell>
+                          <IndexTable.Cell>{color.unitsSold}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {formatCurrency(color.totalRevenue)}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{color.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
+                  </div>
+                </>
+              ) : selectedProductTab === 3 ? (
+                <>
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">
+                    {vendorSummary.length} vendors from {sortedOrders.length} orders
+                  </Text>
+                  <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                    <IndexTable
+                      resourceName={{ singular: 'vendor', plural: 'vendors' }}
+                      itemCount={sortedVendorSummary.length}
+                      headings={vendorHeadings}
+                      selectable={false}
+                      sortable={[false, true, true, true, true, true]}
+                      defaultSortDirection="descending"
+                      sortDirection={vendorSortDirection}
+                      sortColumnIndex={vendorSortColumn}
+                      onSort={handleVendorSort}
+                    >
+                      {sortedVendorSummary.map((vendor, index) => (
+                        <IndexTable.Row
+                          id={vendor.vendor}
+                          key={vendor.vendor}
+                          position={index}
+                        >
+                          <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            <Text as="span" fontWeight="semibold">{vendor.vendor}</Text>
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{vendor.productCount}</IndexTable.Cell>
+                          <IndexTable.Cell>{vendor.unitsSold}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {formatCurrency(vendor.totalRevenue)}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{vendor.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
+                  </div>
+                </>
+              ) : null}
             </Tabs>
             </div>
           </BlockStack>

@@ -9,8 +9,24 @@ interface Order {
   email: string;
   created_at: string;
   total_price: string;
+  subtotal_price: string;
+  total_discounts: string;
+  total_line_items_price: string;
   currency: string;
   financial_status: string;
+  tags: string;
+  customer?: {
+    id: number;
+    email: string;
+    orders_count: number;
+  } | null;
+  refunds?: Array<{
+    id: number;
+    created_at: string;
+    transactions: Array<{
+      amount: string;
+    }>;
+  }>;
   line_items: Array<{
     id: number;
     title: string;
@@ -196,6 +212,58 @@ router.post('/product-images', async (req: Request, res: Response) => {
   }
 });
 
+// Get all collections from the store
+router.get('/collections', async (req: Request, res: Response) => {
+  try {
+    const shop = req.query.shop as string;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    const session = getSession(shop);
+
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const client = new shopify.clients.Rest({ session });
+
+    // Fetch both smart collections and custom collections
+    const [smartCollectionsResponse, customCollectionsResponse] = await Promise.all([
+      client.get({ path: 'smart_collections', query: { limit: '250' } }).catch(() => ({ body: { smart_collections: [] } })),
+      client.get({ path: 'custom_collections', query: { limit: '250' } }).catch(() => ({ body: { custom_collections: [] } })),
+    ]);
+
+    const smartCollections = ((smartCollectionsResponse.body as any).smart_collections || []).map((c: any) => ({
+      id: String(c.id),
+      title: c.title,
+      type: 'smart',
+    }));
+
+    const customCollections = ((customCollectionsResponse.body as any).custom_collections || []).map((c: any) => ({
+      id: String(c.id),
+      title: c.title,
+      type: 'custom',
+    }));
+
+    const allCollections = [...smartCollections, ...customCollections].sort((a, b) =>
+      a.title.localeCompare(b.title)
+    );
+
+    res.json({
+      success: true,
+      collections: allCollections,
+    });
+  } catch (error: any) {
+    console.error('Error fetching collections:', error);
+    res.status(500).json({
+      error: 'Failed to fetch collections',
+      message: error.message,
+    });
+  }
+});
+
 // Get analytics data (sessions for conversion rate)
 // Note: ShopifyQL analytics requires specific API access that may not be available for all stores
 router.get('/analytics', async (req: Request, res: Response) => {
@@ -270,6 +338,182 @@ router.get('/analytics', async (req: Request, res: Response) => {
     res.json({
       success: false,
       error: 'Analytics not available',
+      message: error.message,
+    });
+  }
+});
+
+// Get current inventory levels for all variants
+router.get('/inventory', async (req: Request, res: Response) => {
+  console.log('Inventory endpoint called');
+  try {
+    const shop = req.query.shop as string;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    const session = getSession(shop);
+
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    // Create a GraphQL client for this session
+    const client = new shopify.clients.Graphql({ session });
+
+    // Fetch all products with their variants and inventory
+    const allInventory: { [variantId: string]: number } = {};
+    let hasNextPage = true;
+    let cursor: string | null = null;
+
+    while (hasNextPage) {
+      const query = `
+        query GetInventory($cursor: String) {
+          products(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            edges {
+              node {
+                id
+                variants(first: 100) {
+                  edges {
+                    node {
+                      id
+                      inventoryQuantity
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await client.request(query, {
+        variables: { cursor },
+      });
+
+      const data = response.data as any;
+      const products = data?.products;
+
+      if (products?.edges) {
+        for (const productEdge of products.edges) {
+          const variants = productEdge.node?.variants?.edges || [];
+          for (const variantEdge of variants) {
+            const variant = variantEdge.node;
+            // Extract numeric ID from gid://shopify/ProductVariant/123456
+            const variantId = variant.id.split('/').pop();
+            const quantity = variant.inventoryQuantity ?? 0;
+            allInventory[variantId] = quantity;
+          }
+        }
+      }
+
+      hasNextPage = products?.pageInfo?.hasNextPage || false;
+      cursor = products?.pageInfo?.endCursor || null;
+
+      console.log(`Fetched inventory for ${Object.keys(allInventory).length} variants so far...`);
+    }
+
+    console.log(`Finished fetching inventory. Total variants: ${Object.keys(allInventory).length}`);
+
+    res.json({
+      success: true,
+      inventory: allInventory,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('Error fetching inventory:', error?.message || error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch inventory',
+      message: error.message,
+    });
+  }
+});
+
+// Get variant metadata (SKU, product name, variant name) for inventory display
+router.get('/variants', async (req: Request, res: Response) => {
+  console.log('Variants metadata endpoint called');
+  try {
+    const shop = req.query.shop as string;
+    const variantIds = req.query.variantIds as string; // comma-separated
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    if (!variantIds) {
+      return res.status(400).json({ error: 'Missing variantIds parameter' });
+    }
+
+    const session = getSession(shop);
+
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const client = new shopify.clients.Graphql({ session });
+    const ids = variantIds.split(',').map(id => `gid://shopify/ProductVariant/${id.trim()}`);
+
+    // Shopify has a limit on the number of IDs per query, so batch them
+    const batchSize = 50;
+    const allVariants: Array<{
+      variantId: string;
+      sku: string;
+      variantName: string;
+      productName: string;
+    }> = [];
+
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batchIds = ids.slice(i, i + batchSize);
+
+      const query = `
+        query GetVariants($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on ProductVariant {
+              id
+              sku
+              title
+              product {
+                title
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await client.request(query, {
+        variables: { ids: batchIds },
+      });
+
+      const nodes = (response.data as any)?.nodes || [];
+      for (const v of nodes) {
+        if (v && v.id) {
+          allVariants.push({
+            variantId: v.id.split('/').pop(),
+            sku: v.sku || '',
+            variantName: v.title || 'Default',
+            productName: v.product?.title || 'Unknown',
+          });
+        }
+      }
+    }
+
+    console.log(`Fetched metadata for ${allVariants.length} variants`);
+
+    res.json({
+      success: true,
+      variants: allVariants,
+    });
+  } catch (error: any) {
+    console.error('Error fetching variant metadata:', error?.message || error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch variant metadata',
       message: error.message,
     });
   }
