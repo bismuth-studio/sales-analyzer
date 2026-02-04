@@ -889,6 +889,47 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     return `${seconds}s`;
   };
 
+  const calculateSalesVelocity = (
+    unitsSold: number,
+    dropStartTime: string,
+    soldOutAt: string
+  ): { value: number; unit: 'min' | 'hr' | 'day' } => {
+    const durationMs = new Date(soldOutAt).getTime() - new Date(dropStartTime).getTime();
+    if (durationMs <= 0) return { value: 0, unit: 'hr' };
+
+    const hours = durationMs / 3600000;
+
+    if (hours < 1) {
+      return { value: unitsSold / (durationMs / 60000), unit: 'min' };
+    } else if (hours > 24) {
+      return { value: unitsSold / (hours / 24), unit: 'day' };
+    }
+    return { value: unitsSold / hours, unit: 'hr' };
+  };
+
+  const formatVelocity = (value: number, unit: 'min' | 'hr' | 'day'): string => {
+    const formatted = value < 10 ? value.toFixed(1) : Math.round(value).toString();
+    return `${formatted}/${unit}`;
+  };
+
+  const calculateRevenueVelocity = (
+    totalRevenue: number,
+    dropStartTime: string,
+    soldOutAt: string
+  ): { value: number; unit: 'min' | 'hr' | 'day' } => {
+    const durationMs = new Date(soldOutAt).getTime() - new Date(dropStartTime).getTime();
+    if (durationMs <= 0) return { value: 0, unit: 'hr' };
+
+    const hours = durationMs / 3600000;
+
+    if (hours < 1) {
+      return { value: totalRevenue / (durationMs / 60000), unit: 'min' };
+    } else if (hours > 24) {
+      return { value: totalRevenue / (hours / 24), unit: 'day' };
+    }
+    return { value: totalRevenue / hours, unit: 'hr' };
+  };
+
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: 'success' | 'attention' | 'critical' | 'info' } = {
       paid: 'success',
@@ -1821,23 +1862,53 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
                         }}
                       />
                     )}
-                    <div style={{ overflow: 'hidden' }}>
-                      <Text as="p" variant="bodySm" fontWeight="semibold" truncate>
-                        {product.productName}
-                      </Text>
-                      {(product.color || product.size) && (
-                        <Text as="p" variant="bodySm" tone="subdued">
-                          {[product.color, product.size].filter(Boolean).join(' / ')}
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                      <BlockStack gap="050">
+                        <Text as="p" variant="bodySm" fontWeight="semibold" truncate>
+                          {product.productName}
                         </Text>
-                      )}
-                      <Text as="p" variant="bodySm" tone="critical">
-                        {product.unitsSold} sold (100%)
-                      </Text>
-                      {product.soldOutAt && dropStartTime && (
-                        <Text as="p" variant="bodySm" tone="success">
-                          Sold out in {formatDuration(dropStartTime, product.soldOutAt)}
-                        </Text>
-                      )}
+                        {(product.color || product.size) && (
+                          <Text as="p" variant="bodySm" tone="subdued">
+                            {[product.color, product.size].filter(Boolean).join(' / ')}
+                          </Text>
+                        )}
+                      </BlockStack>
+                      <div style={{ marginTop: '8px' }}>
+                        <BlockStack gap="100">
+                          <Text as="p" variant="bodySm" tone="critical">
+                            {product.unitsSold} sold (100%)
+                          </Text>
+                          {product.soldOutAt && dropStartTime && (() => {
+                            const salesVel = calculateSalesVelocity(
+                              product.unitsSold,
+                              dropStartTime,
+                              product.soldOutAt
+                            );
+                            const revVel = calculateRevenueVelocity(
+                              product.totalRevenue,
+                              dropStartTime,
+                              product.soldOutAt
+                            );
+
+                            return (
+                              <InlineStack gap="200" wrap={false}>
+                                <Text as="span" variant="bodySm">
+                                  {formatVelocity(salesVel.value, salesVel.unit)} units
+                                </Text>
+                                <Text as="span" variant="bodySm" tone="subdued">•</Text>
+                                <Text as="span" variant="bodySm" tone="success">
+                                  {formatCurrency(revVel.value)}/{revVel.unit}
+                                </Text>
+                              </InlineStack>
+                            );
+                          })()}
+                          {product.soldOutAt && dropStartTime && (
+                            <Text as="p" variant="bodySm" tone="success">
+                              Sold out in {formatDuration(dropStartTime, product.soldOutAt)}
+                            </Text>
+                          )}
+                        </BlockStack>
+                      </div>
                     </div>
                   </div>
                 ))}
