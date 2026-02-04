@@ -83,7 +83,7 @@ async function fetchInventorySnapshot(shop: string): Promise<{ [variantId: strin
 }
 
 // GET /api/drops - List all drops for a shop
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const shop = req.query.shop as string;
 
   if (!shop) {
@@ -92,7 +92,7 @@ router.get('/', (req: Request, res: Response) => {
   }
 
   try {
-    const drops = getDropsByShop(shop);
+    const drops = await getDropsByShop(shop);
     res.json({ drops });
   } catch (error) {
     console.error('Error fetching drops:', error);
@@ -101,11 +101,11 @@ router.get('/', (req: Request, res: Response) => {
 });
 
 // GET /api/drops/:id - Get a single drop
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const drop = getDropById(id);
+    const drop = await getDropById(id);
     if (!drop) {
       res.status(404).json({ error: 'Drop not found' });
       return;
@@ -132,7 +132,7 @@ router.post('/', async (req: Request, res: Response) => {
     const inventorySnapshot = await fetchInventorySnapshot(shop);
     const snapshotTakenAt = inventorySnapshot ? new Date().toISOString() : null;
 
-    const drop = createDrop({
+    const drop = await createDrop({
       shop,
       title,
       start_time,
@@ -152,12 +152,12 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PUT /api/drops/:id - Update a drop
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { title, start_time, end_time, collection_id, collection_title } = req.body;
 
   try {
-    const drop = updateDrop(id, {
+    const drop = await updateDrop(id, {
       title,
       start_time,
       end_time,
@@ -178,11 +178,11 @@ router.put('/:id', (req: Request, res: Response) => {
 });
 
 // DELETE /api/drops/:id - Delete a drop
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const deleted = deleteDrop(id);
+    const deleted = await deleteDrop(id);
     if (!deleted) {
       res.status(404).json({ error: 'Drop not found' });
       return;
@@ -195,7 +195,7 @@ router.delete('/:id', (req: Request, res: Response) => {
 });
 
 // PUT /api/drops/:id/inventory - Update inventory snapshot (manual edit or CSV import)
-router.put('/:id/inventory', (req: Request, res: Response) => {
+router.put('/:id/inventory', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { inventory, source } = req.body;
   // inventory: { [variantId: string]: number }
@@ -210,7 +210,7 @@ router.put('/:id/inventory', (req: Request, res: Response) => {
   const inventorySource = validSources.includes(source) ? source : 'manual';
 
   try {
-    const drop = getDropById(id);
+    const drop = await getDropById(id);
     if (!drop) {
       res.status(404).json({ error: 'Drop not found' });
       return;
@@ -218,10 +218,10 @@ router.put('/:id/inventory', (req: Request, res: Response) => {
 
     // Preserve original snapshot if this is first manual edit
     if (!drop.original_inventory_snapshot && drop.inventory_snapshot) {
-      updateDropOriginalSnapshot(id, drop.inventory_snapshot);
+      await updateDropOriginalSnapshot(id, drop.inventory_snapshot);
     }
 
-    const updatedDrop = updateDropInventory(id, {
+    const updatedDrop = await updateDropInventory(id, {
       inventory_snapshot: JSON.stringify(inventory),
       inventory_source: inventorySource,
     });
@@ -244,7 +244,7 @@ router.post('/:id/inventory/snapshot', async (req: Request, res: Response) => {
   }
 
   try {
-    const drop = getDropById(id);
+    const drop = await getDropById(id);
     if (!drop) {
       res.status(404).json({ error: 'Drop not found' });
       return;
@@ -261,13 +261,13 @@ router.post('/:id/inventory/snapshot', async (req: Request, res: Response) => {
     const snapshotJson = JSON.stringify(inventorySnapshot);
 
     // Update both snapshot and original
-    const updatedDrop = updateDropInventory(id, {
+    const updatedDrop = await updateDropInventory(id, {
       inventory_snapshot: snapshotJson,
       inventory_source: 'auto',
     });
 
     // Also update original_inventory_snapshot
-    updateDropOriginalSnapshot(id, snapshotJson);
+    await updateDropOriginalSnapshot(id, snapshotJson);
 
     res.json({
       drop: updatedDrop,
@@ -281,11 +281,11 @@ router.post('/:id/inventory/snapshot', async (req: Request, res: Response) => {
 });
 
 // POST /api/drops/:id/inventory/reset - Reset to original snapshot
-router.post('/:id/inventory/reset', (req: Request, res: Response) => {
+router.post('/:id/inventory/reset', async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const drop = getDropById(id);
+    const drop = await getDropById(id);
     if (!drop) {
       res.status(404).json({ error: 'Drop not found' });
       return;
@@ -296,7 +296,7 @@ router.post('/:id/inventory/reset', (req: Request, res: Response) => {
       return;
     }
 
-    const updatedDrop = updateDropInventory(id, {
+    const updatedDrop = await updateDropInventory(id, {
       inventory_snapshot: drop.original_inventory_snapshot,
       inventory_source: 'auto',
     });
