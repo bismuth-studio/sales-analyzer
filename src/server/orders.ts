@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getSession, shopify } from './shopify';
+import { rateLimitedBatch, getQueueStats } from './shopifyRateLimiter';
+import { getCachedProducts, cacheProducts } from './sessionStorage';
 
 const router = Router();
 
@@ -168,52 +170,97 @@ router.post('/product-images', async (req: Request, res: Response) => {
 
     console.log('Fetching metadata for', uniqueProductIds.length, 'unique products:', uniqueProductIds.slice(0, 3));
 
-    // Fetch all products in parallel for speed
-    const fetchPromises = uniqueProductIds.map(async (productId) => {
-      try {
-        console.log(`Fetching product ${productId}...`);
-        const response = await client.get({
-          path: `products/${productId}`,
-        });
+    // Step 1: Check cache for existing products
+    const productIdStrings = uniqueProductIds.map(String);
+    const cachedData = getCachedProducts(shop, productIdStrings);
+    console.log(`Found ${cachedData.size} products in cache`);
 
-        const product = (response.body as any).product;
-        const imageUrl = product?.image?.src || product?.images?.[0]?.src;
-        const productType = product?.product_type || '';
-        const vendor = product?.vendor || '';
-        // Use tags as category - take the first tag or use product_type as fallback
-        const tags = product?.tags || '';
-        const category = tags ? tags.split(',')[0].trim() : productType;
-
-        console.log(`Product ${productId}: image=${imageUrl ? 'found' : 'not found'}, type=${productType}, vendor=${vendor}, category=${category}`);
-
-        return {
-          productId: String(productId),
-          imageUrl,
-          productType,
-          vendor,
-          category,
-        };
-      } catch (error: any) {
-        console.error(`Error fetching product ${productId}:`, error?.message);
-        return null;
+    // Populate results from cache
+    for (const [productId, cached] of cachedData) {
+      if (cached.imageUrl) {
+        productImages[productId] = cached.imageUrl;
       }
-    });
+      productMetadata[productId] = {
+        productType: cached.productType,
+        vendor: cached.vendor,
+        category: cached.category,
+      };
+    }
 
-    const results = await Promise.all(fetchPromises);
+    // Step 2: Identify products that need to be fetched from API
+    const uncachedProductIds = uniqueProductIds.filter(id => !cachedData.has(String(id)));
+    console.log(`Need to fetch ${uncachedProductIds.length} products from Shopify API`);
 
-    // Build the response objects from results
-    results.forEach(result => {
-      if (result) {
-        if (result.imageUrl) {
-          productImages[result.productId] = result.imageUrl;
+    if (uncachedProductIds.length > 0) {
+      const queueStats = getQueueStats();
+      console.log(`Queue stats before batch: pending=${queueStats.pending}, size=${queueStats.size}`);
+
+      // Step 3: Fetch uncached products with rate limiting (2 req/sec max)
+      const fetchedProducts: Array<{
+        productId: string;
+        imageUrl: string | null;
+        productType: string;
+        vendor: string;
+        category: string;
+      }> = [];
+
+      const results = await rateLimitedBatch(
+        uncachedProductIds,
+        async (productId) => {
+          const response = await client.get({
+            path: `products/${productId}`,
+          });
+
+          const product = (response.body as any).product;
+          const imageUrl = product?.image?.src || product?.images?.[0]?.src || null;
+          const productType = product?.product_type || '';
+          const vendor = product?.vendor || '';
+          // Use tags as category - take the first tag or use product_type as fallback
+          const tags = product?.tags || '';
+          const category = tags ? tags.split(',')[0].trim() : productType;
+
+          return {
+            productId: String(productId),
+            imageUrl,
+            productType,
+            vendor,
+            category,
+          };
+        },
+        {
+          maxRetries: 5,
+          onProgress: (completed, total) => {
+            if (completed % 10 === 0 || completed === total) {
+              console.log(`Product fetch progress: ${completed}/${total}`);
+            }
+          },
+          onError: (productId, error) => {
+            console.error(`Failed to fetch product ${productId} after retries:`, error.message);
+          },
         }
-        productMetadata[result.productId] = {
-          productType: result.productType,
-          vendor: result.vendor,
-          category: result.category,
-        };
+      );
+
+      // Step 4: Process results and build response
+      for (const result of results) {
+        if (result) {
+          fetchedProducts.push(result);
+          if (result.imageUrl) {
+            productImages[result.productId] = result.imageUrl;
+          }
+          productMetadata[result.productId] = {
+            productType: result.productType,
+            vendor: result.vendor,
+            category: result.category,
+          };
+        }
       }
-    });
+
+      // Step 5: Cache newly fetched products for future requests
+      if (fetchedProducts.length > 0) {
+        const cachedCount = cacheProducts(shop, fetchedProducts);
+        console.log(`Cached ${cachedCount} products for future requests`);
+      }
+    }
 
     console.log('Successfully fetched metadata for', Object.keys(productMetadata).length, 'products');
 

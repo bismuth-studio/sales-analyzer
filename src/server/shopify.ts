@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { config } from 'dotenv';
 import '@shopify/shopify-api/adapters/node';
 import { shopifyApi, Session, ApiVersion } from '@shopify/shopify-api';
+import { storeSession, loadSessionByShop } from './sessionStorage';
 
 // Load environment variables
 config();
@@ -18,9 +19,6 @@ export const shopify = shopifyApi({
   apiVersion: ApiVersion.January26,
   isEmbeddedApp: true,
 });
-
-// Store sessions in memory (for production, use a database)
-const sessionStorage = new Map<string, Session>();
 
 // OAuth callback
 router.get('/auth', async (req, res) => {
@@ -51,8 +49,8 @@ router.get('/callback', async (req, res) => {
 
     const { session } = callback;
 
-    // Store session
-    sessionStorage.set(session.shop, session);
+    // Store session persistently in SQLite
+    storeSession(session);
 
     // Log access token for bulk order generation script
     console.log('\n🔑 Access Token (add to .env as SHOPIFY_ACCESS_TOKEN):');
@@ -67,9 +65,9 @@ router.get('/callback', async (req, res) => {
   }
 });
 
-// Get session for a shop
+// Get session for a shop (from persistent SQLite storage)
 export const getSession = (shop: string): Session | undefined => {
-  return sessionStorage.get(shop);
+  return loadSessionByShop(shop);
 };
 
 export default router;
