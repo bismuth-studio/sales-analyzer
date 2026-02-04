@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Page,
@@ -15,6 +15,8 @@ import { EditIcon } from '@shopify/polaris-icons';
 import OrdersListWithFilters from './OrdersListWithFilters';
 import DropModal from './DropModal';
 import InventoryManagement from './InventoryManagement/InventoryManagement';
+import PerformanceScoreCard from './PerformanceScoreCard';
+import type { DropPerformanceScore } from '../utils/dropScore';
 
 interface Drop {
   id: string;
@@ -43,6 +45,11 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [performanceScore, setPerformanceScore] = useState<DropPerformanceScore | null>(null);
+
+  const handleScoreCalculated = useCallback((score: DropPerformanceScore | null) => {
+    setPerformanceScore(score);
+  }, []);
 
   useEffect(() => {
     if (!dropId) {
@@ -147,11 +154,14 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
           <Card>
             <BlockStack gap="300">
               <InlineStack align="space-between">
-                <Text as="h2" variant="headingMd">Drop Details</Text>
+                <Text as="h2" variant="headingLg">Drop Details</Text>
                 <Button icon={EditIcon} onClick={() => setEditModalOpen(true)}>
                   Edit Drop
                 </Button>
               </InlineStack>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Basic information about your product drop including timing and collection
+              </Text>
               <InlineStack gap="800" align="start" wrap>
                 <BlockStack gap="100">
                   <Text as="span" variant="bodySm" tone="subdued">Title</Text>
@@ -191,11 +201,14 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
             onInventoryUpdated={handleDropSaved}
           />
 
+          <PerformanceScoreCard score={performanceScore} />
+
           <OrdersListWithFilters
             shop={shop}
             dropStartTime={drop.start_time}
             dropEndTime={drop.end_time}
             inventorySnapshot={drop.inventory_snapshot}
+            onScoreCalculated={handleScoreCalculated}
           />
         </BlockStack>
       </div>

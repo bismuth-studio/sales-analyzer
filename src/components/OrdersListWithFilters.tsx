@@ -15,6 +15,7 @@ import {
   TextField,
   FormLayout,
 } from '@shopify/polaris';
+import { calculateDropPerformanceScore, type DropPerformanceScore } from '../utils/dropScore';
 
 interface Order {
   id: number;
@@ -129,9 +130,10 @@ interface OrdersListProps {
   dropEndTime?: string;
   onCreateDrop?: (startDate: string, startTime: string, endDate: string, endTime: string) => void;
   inventorySnapshot?: string | null; // JSON string: { [variantId: string]: number }
+  onScoreCalculated?: (score: DropPerformanceScore | null) => void;
 }
 
-const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime, dropEndTime, onCreateDrop, inventorySnapshot }) => {
+const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime, dropEndTime, onCreateDrop, inventorySnapshot, onScoreCalculated }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -199,6 +201,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
   const [filterStartTime, setFilterStartTime] = useState<string>('00:00');
   const [filterEndDate, setFilterEndDate] = useState<string>(today);
   const [filterEndTime, setFilterEndTime] = useState<string>('23:59');
+
+  // Track last calculated score to avoid unnecessary updates
+  const lastScoreRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     if (!shop) {
@@ -1447,6 +1452,35 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
+  // Calculate Drop Performance Score (computed value, not a hook)
+  let performanceScore: ReturnType<typeof calculateDropPerformanceScore> | null = null;
+  if (dropStartTime && dropEndTime) {
+    try {
+      performanceScore = calculateDropPerformanceScore({
+        productSummary: sortedProductSummary,
+        orders: sortedOrders,
+        dropStartTime,
+        dropEndTime,
+        netSales,
+        avgOrderValue,
+        totalOrders,
+        newCustomers,
+        returningCustomers,
+        uniqueCustomers,
+      });
+    } catch (error) {
+      console.error('Error calculating performance score:', error);
+      performanceScore = null;
+    }
+  }
+
+  // Notify parent of score changes (only when score actually changes)
+  const scoreKey = performanceScore ? `${performanceScore.overall}-${performanceScore.grade}` : 'null';
+  if (onScoreCalculated && lastScoreRef.current !== scoreKey) {
+    lastScoreRef.current = scoreKey;
+    onScoreCalculated(performanceScore);
+  }
+
   // Export to CSV function
   const exportToCSV = () => {
     let csvContent = '';
@@ -1557,7 +1591,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
         <Card>
           <BlockStack gap="400">
             <InlineStack align="space-between">
-              <Text as="h2" variant="headingMd">
+              <Text as="h2" variant="headingLg">
                 Explore Orders
               </Text>
               <InlineStack gap="200">
@@ -1584,6 +1618,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
                 </Button>
               </InlineStack>
             </InlineStack>
+            <Text as="p" variant="bodySm" tone="subdued">
+              Analyze orders from any date range, including beyond your drop dates
+            </Text>
             <FormLayout>
               <FormLayout.Group>
                 <TextField
@@ -1633,8 +1670,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       {/* Summary Metrics Section */}
       <Card>
         <BlockStack gap="400">
-          <Text as="h2" variant="headingMd">
+          <Text as="h2" variant="headingLg">
             Drop Summary
+          </Text>
+          <Text as="p" variant="bodySm" tone="subdued">
+            Key metrics and statistics for your drop including revenue, orders, and customer data
           </Text>
           {/* Row 1: Sales Metrics */}
           <InlineStack gap="800" align="start" wrap>
@@ -1815,13 +1855,16 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
         <Card>
           <BlockStack gap="400">
             <InlineStack gap="200" align="start" blockAlign="center">
-              <Text as="h2" variant="headingMd">
+              <Text as="h2" variant="headingLg">
                 Sold Out Variants
               </Text>
               <Badge tone="critical">
                 {sortedProductSummary.filter(p => p.remainingInventory <= 0).length.toString()}
               </Badge>
             </InlineStack>
+            <Text as="p" variant="bodySm" tone="subdued">
+              Products that have reached 100% sell-through based on starting inventory
+            </Text>
             <InlineStack gap="400" wrap>
               {sortedProductSummary
                 .filter(p => p.remainingInventory <= 0)
@@ -1923,7 +1966,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
           <BlockStack gap="400">
             <InlineStack align="space-between">
               <InlineStack gap="200" blockAlign="center">
-                <Text as="h2" variant="headingMd">
+                <Text as="h2" variant="headingLg">
                   Product Sales Breakdown
                 </Text>
                 {isEstimatedInventory && !parsedSnapshot && (
@@ -1937,6 +1980,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
                 Export CSV
               </Button>
             </InlineStack>
+            <Text as="p" variant="bodySm" tone="subdued">
+              Detailed performance metrics for each product variant including sales, inventory, and revenue
+            </Text>
             <div className="large-tabs">
               <Tabs tabs={productSummaryTabs} selected={selectedProductTab} onSelect={setSelectedProductTab}>
               {selectedProductTab === 0 ? (
@@ -2237,8 +2283,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       {/* Orders Section - Last */}
       <Card>
         <BlockStack gap="400">
-          <Text as="h2" variant="headingMd">
+          <Text as="h2" variant="headingLg">
             Orders
+          </Text>
+          <Text as="p" variant="bodySm" tone="subdued">
+            Complete list of all orders placed during the selected time period
           </Text>
           <Text as="p" variant="bodyMd" fontWeight="semibold">
             Showing {sortedOrders.length} of {orders.length} orders

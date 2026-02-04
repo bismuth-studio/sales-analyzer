@@ -302,7 +302,7 @@ function InventoryManagement({
           >
             <InlineStack align="space-between">
               <InlineStack gap="200" blockAlign="center">
-                <Text as="h2" variant="headingMd">Inventory Management</Text>
+                <Text as="h2" variant="headingLg">Inventory Management</Text>
                 {getSourceBadge()}
                 {snapshotTakenAt && (
                   <Text as="span" variant="bodySm" tone="subdued">
@@ -319,6 +319,10 @@ function InventoryManagement({
           </div>
 
           {isExpanded && (
+            <>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Track and manage starting inventory levels for accurate sell-through calculations
+              </Text>
             <BlockStack gap="400">
               {error && (
                 <Banner tone="critical" onDismiss={() => setError(null)}>
@@ -393,6 +397,7 @@ function InventoryManagement({
                 </Banner>
               )}
             </BlockStack>
+            </>
           )}
         </BlockStack>
       </Card>
