@@ -124,6 +124,14 @@ interface CategorySummary {
   revenuePercentage: number;
 }
 
+interface SyncStatus {
+  status: 'idle' | 'syncing' | 'completed' | 'error';
+  syncedOrders: number;
+  totalOrders: number | null;
+  lastSyncAt: string | null;
+  syncRequired: boolean;
+}
+
 interface OrdersListProps {
   shop: string;
   dropStartTime?: string;
@@ -137,6 +145,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+
+  // Sync status state
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncProgress, setSyncProgress] = useState<number>(0);
+  const eventSourceRef = React.useRef<EventSource | null>(null);
   const [sortedOrders, setSortedOrders] = useState<Order[]>([]);
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [sortColumn, setSortColumn] = useState<number>(3); // Default to Date column
@@ -845,6 +858,20 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
       if (data.success) {
         setOrders(data.orders);
+
+        // Handle sync status
+        if (data.syncStatus) {
+          setSyncStatus(data.syncStatus);
+
+          // If sync is in progress, connect to SSE for updates
+          if (data.syncStatus.status === 'syncing') {
+            connectToSyncProgress();
+          }
+          // If no orders and sync required, trigger sync automatically
+          else if (data.syncStatus.syncRequired && data.orders.length === 0) {
+            triggerSync();
+          }
+        }
       } else {
         setError(data.error || 'Failed to load orders');
       }
@@ -855,6 +882,84 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       setLoading(false);
     }
   };
+
+  const triggerSync = async () => {
+    try {
+      const response = await fetch(`/api/orders/sync/start?shop=${encodeURIComponent(shop)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSyncStatus(prev => prev ? { ...prev, status: 'syncing' } : {
+          status: 'syncing',
+          syncedOrders: 0,
+          totalOrders: null,
+          lastSyncAt: null,
+          syncRequired: false,
+        });
+        connectToSyncProgress();
+      }
+    } catch (err) {
+      console.error('Error triggering sync:', err);
+    }
+  };
+
+  const connectToSyncProgress = () => {
+    // Close existing connection if any
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    const eventSource = new EventSource(`/api/orders/sync/progress?shop=${encodeURIComponent(shop)}`);
+    eventSourceRef.current = eventSource;
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'progress' || data.type === 'status') {
+          setSyncProgress(data.total ? (data.synced / data.total) * 100 : 0);
+          setSyncStatus(prev => prev ? {
+            ...prev,
+            syncedOrders: data.synced,
+            totalOrders: data.total,
+            status: data.status || prev.status,
+          } : null);
+        } else if (data.type === 'complete') {
+          eventSource.close();
+          eventSourceRef.current = null;
+          // Refresh orders after sync completes
+          fetchOrders();
+        } else if (data.type === 'error') {
+          setSyncStatus(prev => prev ? { ...prev, status: 'error' } : null);
+          setError(data.message || 'Sync failed');
+          eventSource.close();
+          eventSourceRef.current = null;
+        }
+      } catch (err) {
+        console.error('Error parsing SSE event:', err);
+      }
+    };
+
+    eventSource.onerror = () => {
+      console.error('SSE connection error');
+      eventSource.close();
+      eventSourceRef.current = null;
+    };
+  };
+
+  // Cleanup SSE connection on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -951,6 +1056,40 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     );
   };
 
+  // Sync progress banner component
+  const SyncProgressBanner = () => {
+    if (!syncStatus || syncStatus.status !== 'syncing') return null;
+
+    return (
+      <Banner tone="info" title="Syncing orders from Shopify">
+        <BlockStack gap="200">
+          <Text as="p">
+            {syncStatus.syncedOrders.toLocaleString()} orders synced
+            {syncStatus.totalOrders ? ` of ${syncStatus.totalOrders.toLocaleString()}` : '...'}
+          </Text>
+          <div style={{
+            width: '100%',
+            height: '8px',
+            backgroundColor: '#e4e5e7',
+            borderRadius: '4px',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              width: `${syncProgress}%`,
+              height: '100%',
+              backgroundColor: '#2c6ecb',
+              borderRadius: '4px',
+              transition: 'width 0.3s ease',
+            }} />
+          </div>
+          <Text as="p" tone="subdued">
+            Orders will appear as they sync. You can continue browsing.
+          </Text>
+        </BlockStack>
+      </Banner>
+    );
+  };
+
   if (loading) {
     return (
       <Card>
@@ -992,6 +1131,35 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
   }
 
   if (orders.length === 0) {
+    // Show sync progress if syncing
+    if (syncStatus?.status === 'syncing') {
+      return (
+        <Card>
+          <div style={{ padding: '20px' }}>
+            <SyncProgressBanner />
+          </div>
+        </Card>
+      );
+    }
+
+    // Show option to trigger sync if needed
+    if (syncStatus?.syncRequired) {
+      return (
+        <Card>
+          <EmptyState
+            heading="No orders synced yet"
+            image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+            action={{
+              content: 'Sync Orders from Shopify',
+              onAction: triggerSync,
+            }}
+          >
+            <p>Click the button above to sync your orders from Shopify. This may take a few minutes for stores with many orders.</p>
+          </EmptyState>
+        </Card>
+      );
+    }
+
     return (
       <Card>
         <EmptyState
@@ -1586,6 +1754,9 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
   return (
     <BlockStack gap="400">
+      {/* Sync Progress Banner (shown when sync is in progress) */}
+      {syncStatus?.status === 'syncing' && <SyncProgressBanner />}
+
       {/* Filters Section (only in explore mode) */}
       {isExploreMode && (
         <Card>

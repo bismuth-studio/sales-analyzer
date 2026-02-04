@@ -3,6 +3,7 @@ import { config } from 'dotenv';
 import '@shopify/shopify-api/adapters/node';
 import { shopifyApi, Session, ApiVersion } from '@shopify/shopify-api';
 import { storeSession, loadSessionByShop } from './sessionStorage';
+import { startOrderSync } from './orderSyncService';
 
 // Load environment variables
 config();
@@ -56,6 +57,13 @@ router.get('/callback', async (req, res) => {
     console.log('\n🔑 Access Token (add to .env as SHOPIFY_ACCESS_TOKEN):');
     console.log(session.accessToken);
     console.log('');
+
+    // Trigger initial order sync in background (don't await)
+    startOrderSync(session.shop, false).then(result => {
+      console.log(`📦 Order sync initiated for ${session.shop}: ${result.message}`);
+    }).catch(err => {
+      console.error(`Failed to start order sync for ${session.shop}:`, err);
+    });
 
     // Redirect to app with shop parameter
     res.redirect(`/?shop=${session.shop}&host=${req.query.host}`);

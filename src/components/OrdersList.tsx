@@ -28,6 +28,14 @@ interface Order {
   }>;
 }
 
+interface SyncStatus {
+  status: 'idle' | 'syncing' | 'completed' | 'error';
+  syncedOrders: number;
+  totalOrders: number | null;
+  lastSyncAt: string | null;
+  syncRequired: boolean;
+}
+
 interface OrdersListProps {
   shop: string;
 }
@@ -36,6 +44,9 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncProgress, setSyncProgress] = useState<number>(0);
+  const eventSourceRef = React.useRef<EventSource | null>(null);
   const [sortedOrders, setSortedOrders] = useState<Order[]>([]);
   const [sortColumn, setSortColumn] = useState<number>(2); // Default to Date column
   const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
@@ -122,6 +133,17 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
 
       if (data.success) {
         setOrders(data.orders);
+
+        // Handle sync status
+        if (data.syncStatus) {
+          setSyncStatus(data.syncStatus);
+
+          if (data.syncStatus.status === 'syncing') {
+            connectToSyncProgress();
+          } else if (data.syncStatus.syncRequired && data.orders.length === 0) {
+            triggerSync();
+          }
+        }
       } else {
         setError(data.error || 'Failed to load orders');
       }
@@ -132,6 +154,69 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
       setLoading(false);
     }
   };
+
+  const triggerSync = async () => {
+    try {
+      const response = await fetch(`/api/orders/sync/start?shop=${encodeURIComponent(shop)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSyncStatus(prev => prev ? { ...prev, status: 'syncing' } : {
+          status: 'syncing', syncedOrders: 0, totalOrders: null, lastSyncAt: null, syncRequired: false,
+        });
+        connectToSyncProgress();
+      }
+    } catch (err) {
+      console.error('Error triggering sync:', err);
+    }
+  };
+
+  const connectToSyncProgress = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    const eventSource = new EventSource(`/api/orders/sync/progress?shop=${encodeURIComponent(shop)}`);
+    eventSourceRef.current = eventSource;
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'progress' || data.type === 'status') {
+          setSyncProgress(data.total ? (data.synced / data.total) * 100 : 0);
+          setSyncStatus(prev => prev ? { ...prev, syncedOrders: data.synced, totalOrders: data.total } : null);
+        } else if (data.type === 'complete') {
+          eventSource.close();
+          eventSourceRef.current = null;
+          fetchOrders();
+        } else if (data.type === 'error') {
+          setSyncStatus(prev => prev ? { ...prev, status: 'error' } : null);
+          eventSource.close();
+          eventSourceRef.current = null;
+        }
+      } catch (err) {
+        console.error('Error parsing SSE event:', err);
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      eventSourceRef.current = null;
+    };
+  };
+
+  // Cleanup SSE on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -157,6 +242,31 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
       <Badge tone={statusMap[status] || 'info'}>
         {status.charAt(0).toUpperCase() + status.slice(1)}
       </Badge>
+    );
+  };
+
+  // Sync progress banner
+  const SyncProgressBanner = () => {
+    if (!syncStatus || syncStatus.status !== 'syncing') return null;
+
+    return (
+      <Banner tone="info" title="Syncing orders from Shopify">
+        <BlockStack gap="200">
+          <Text as="p">
+            {syncStatus.syncedOrders.toLocaleString()} orders synced
+            {syncStatus.totalOrders ? ` of ${syncStatus.totalOrders.toLocaleString()}` : '...'}
+          </Text>
+          <div style={{
+            width: '100%', height: '8px', backgroundColor: '#e4e5e7',
+            borderRadius: '4px', overflow: 'hidden',
+          }}>
+            <div style={{
+              width: `${syncProgress}%`, height: '100%', backgroundColor: '#2c6ecb',
+              borderRadius: '4px', transition: 'width 0.3s ease',
+            }} />
+          </div>
+        </BlockStack>
+      </Banner>
     );
   };
 
@@ -193,6 +303,30 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
   }
 
   if (orders.length === 0) {
+    if (syncStatus?.status === 'syncing') {
+      return (
+        <Card>
+          <div style={{ padding: '20px' }}>
+            <SyncProgressBanner />
+          </div>
+        </Card>
+      );
+    }
+
+    if (syncStatus?.syncRequired) {
+      return (
+        <Card>
+          <EmptyState
+            heading="No orders synced yet"
+            image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+            action={{ content: 'Sync Orders', onAction: triggerSync }}
+          >
+            <p>Click the button to sync orders from Shopify.</p>
+          </EmptyState>
+        </Card>
+      );
+    }
+
     return (
       <Card>
         <EmptyState
@@ -232,6 +366,7 @@ const OrdersList: React.FC<OrdersListProps> = ({ shop }) => {
   return (
     <Card>
       <BlockStack gap="400">
+        {syncStatus?.status === 'syncing' && <SyncProgressBanner />}
         <InlineStack align="space-between" blockAlign="center">
           <Text as="p" variant="bodyMd" fontWeight="semibold">
             Your Last 10 Sales ({orders.length} orders)

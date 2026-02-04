@@ -1,49 +1,19 @@
 import { Router, Request, Response } from 'express';
 import { getSession, shopify } from './shopify';
 import { rateLimitedBatch, getQueueStats } from './shopifyRateLimiter';
-import { getCachedProducts, cacheProducts } from './sessionStorage';
+import { getCachedProducts, cacheProducts, getOrdersByShop } from './sessionStorage';
+import {
+  startOrderSync,
+  cancelSync,
+  subscribeSyncEvents,
+  unsubscribeSyncEvents,
+  getFullSyncStatus,
+  SyncEvent,
+} from './orderSyncService';
 
 const router = Router();
 
-interface Order {
-  id: number;
-  name: string;
-  email: string;
-  created_at: string;
-  total_price: string;
-  subtotal_price: string;
-  total_discounts: string;
-  total_line_items_price: string;
-  currency: string;
-  financial_status: string;
-  tags: string;
-  customer?: {
-    id: number;
-    email: string;
-    orders_count: number;
-  } | null;
-  refunds?: Array<{
-    id: number;
-    created_at: string;
-    transactions: Array<{
-      amount: string;
-    }>;
-  }>;
-  line_items: Array<{
-    id: number;
-    title: string;
-    quantity: number;
-    price: string;
-    variant_title: string | null;
-    sku: string | null;
-    product_id: number;
-    variant_id: number;
-    vendor: string | null;
-    product_type: string | null;
-  }>;
-}
-
-// Get all orders with pagination
+// Get all orders - returns cached orders from SQLite (instant response)
 router.get('/recent', async (req: Request, res: Response) => {
   try {
     const shop = req.query.shop as string;
@@ -58,67 +28,23 @@ router.get('/recent', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Not authenticated. Please install the app first.' });
     }
 
-    // Create a REST client for this session
-    const client = new shopify.clients.Rest({ session });
+    // Get cached orders from SQLite (instant - no API calls)
+    const cachedOrders = getOrdersByShop(shop);
+    const syncStatus = getFullSyncStatus(shop);
 
-    // Fetch all orders using pagination (max 250 per request)
-    const allOrders: Order[] = [];
-    let pageInfo: string | undefined = undefined;
-    let hasNextPage = true;
-
-    console.log('Starting to fetch all orders...');
-
-    while (hasNextPage) {
-      // When using page_info, you can only include page_info and limit - no other params
-      const query: Record<string, string> = pageInfo
-        ? { limit: '250', page_info: pageInfo }
-        : { limit: '250', status: 'any' };
-
-      const response = await client.get({
-        path: 'orders',
-        query,
-      });
-
-      const orders = (response.body as any).orders as Order[];
-      allOrders.push(...orders);
-
-      console.log(`Fetched ${orders.length} orders, total so far: ${allOrders.length}`);
-
-      // Check for next page using pageInfo from response
-      const headers = response.headers as Record<string, string | string[] | undefined>;
-      const linkHeader = headers?.link || headers?.Link;
-      const linkStr = Array.isArray(linkHeader) ? linkHeader[0] : linkHeader;
-
-      console.log('Link header:', linkStr ? linkStr.substring(0, 200) : 'none');
-
-      if (linkStr && linkStr.includes('rel="next"')) {
-        // Extract page_info from link header - try multiple patterns
-        const nextMatch = linkStr.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/) ||
-                          linkStr.match(/page_info=([^&>;]+).*rel="next"/);
-        if (nextMatch) {
-          pageInfo = nextMatch[1];
-          console.log('Found next page_info:', pageInfo.substring(0, 50) + '...');
-        } else {
-          console.log('Could not extract page_info from Link header');
-          hasNextPage = false;
-        }
-      } else {
-        console.log('No next page in Link header');
-        hasNextPage = false;
-      }
-    }
-
-    console.log(`Finished fetching orders. Total: ${allOrders.length}`);
-
-    // Debug: Log first order's line items to see what Shopify returns
-    if (allOrders.length > 0 && allOrders[0].line_items && allOrders[0].line_items.length > 0) {
-      console.log('Sample line item from Shopify API:', JSON.stringify(allOrders[0].line_items[0], null, 2));
-    }
+    console.log(`Returning ${cachedOrders.length} cached orders for ${shop} (sync status: ${syncStatus.status})`);
 
     res.json({
       success: true,
-      count: allOrders.length,
-      orders: allOrders,
+      count: cachedOrders.length,
+      orders: cachedOrders,
+      syncStatus: {
+        status: syncStatus.status,
+        syncedOrders: syncStatus.syncedOrders,
+        totalOrders: syncStatus.totalOrders,
+        lastSyncAt: syncStatus.lastSyncAt,
+        syncRequired: syncStatus.syncRequired,
+      },
     });
   } catch (error: any) {
     console.error('Error fetching orders:', error);
@@ -127,6 +53,128 @@ router.get('/recent', async (req: Request, res: Response) => {
       message: error.message,
     });
   }
+});
+
+// Start order sync (background job)
+router.post('/sync/start', async (req: Request, res: Response) => {
+  try {
+    const shop = req.query.shop as string || req.body.shop;
+    const force = req.body.force === true;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    const session = getSession(shop);
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated. Please install the app first.' });
+    }
+
+    const result = await startOrderSync(shop, force);
+
+    res.json({
+      success: result.success,
+      message: result.message,
+    });
+  } catch (error: any) {
+    console.error('Error starting order sync:', error);
+    res.status(500).json({
+      error: 'Failed to start sync',
+      message: error.message,
+    });
+  }
+});
+
+// Get sync status
+router.get('/sync/status', async (req: Request, res: Response) => {
+  try {
+    const shop = req.query.shop as string;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    const syncStatus = getFullSyncStatus(shop);
+
+    res.json({
+      success: true,
+      ...syncStatus,
+    });
+  } catch (error: any) {
+    console.error('Error getting sync status:', error);
+    res.status(500).json({
+      error: 'Failed to get sync status',
+      message: error.message,
+    });
+  }
+});
+
+// Cancel ongoing sync
+router.post('/sync/cancel', async (req: Request, res: Response) => {
+  try {
+    const shop = req.query.shop as string || req.body.shop;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    const cancelled = cancelSync(shop);
+
+    res.json({
+      success: cancelled,
+      message: cancelled ? 'Sync cancelled' : 'No sync in progress',
+    });
+  } catch (error: any) {
+    console.error('Error cancelling sync:', error);
+    res.status(500).json({
+      error: 'Failed to cancel sync',
+      message: error.message,
+    });
+  }
+});
+
+// SSE endpoint for real-time sync progress
+router.get('/sync/progress', (req: Request, res: Response) => {
+  const shop = req.query.shop as string;
+
+  if (!shop) {
+    return res.status(400).json({ error: 'Missing shop parameter' });
+  }
+
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+
+  // Send initial status
+  const initialStatus = getFullSyncStatus(shop);
+  res.write(`data: ${JSON.stringify({
+    type: 'status',
+    shop,
+    synced: initialStatus.syncedOrders,
+    total: initialStatus.totalOrders,
+    status: initialStatus.status,
+    syncRequired: initialStatus.syncRequired,
+  })}\n\n`);
+
+  // Subscribe to sync events
+  const listener = (event: SyncEvent) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+
+  subscribeSyncEvents(shop, listener);
+
+  // Heartbeat every 30s to keep connection alive
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 30000);
+
+  // Cleanup on disconnect
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unsubscribeSyncEvents(shop, listener);
+  });
 });
 
 // Get product metadata (images, type, vendor, category) for multiple product IDs
