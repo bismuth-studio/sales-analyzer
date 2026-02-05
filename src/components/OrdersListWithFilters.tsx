@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card,
   IndexTable,
@@ -12,10 +12,15 @@ import {
   Link,
   Tabs,
   Button,
-  TextField,
-  FormLayout,
 } from '@shopify/polaris';
 import { calculateDropPerformanceScore, type DropPerformanceScore } from '../utils/dropScore';
+import {
+  SummaryMetricsCard,
+  SoldOutVariantsSection,
+  FilterSection,
+  getDatePreset,
+  type DatePreset,
+} from './orders';
 
 interface Order {
   id: number;
@@ -972,74 +977,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     });
   };
 
-  const formatDuration = (startTime: string, endTime: string) => {
-    const start = new Date(startTime).getTime();
-    const end = new Date(endTime).getTime();
-    const durationMs = end - start;
-
-    if (durationMs < 0) return 'N/A';
-
-    const seconds = Math.floor(durationMs / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    if (days > 0) {
-      const remainingHours = hours % 24;
-      return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-    }
-    if (hours > 0) {
-      const remainingMinutes = minutes % 60;
-      return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
-    }
-    if (minutes > 0) {
-      const remainingSeconds = seconds % 60;
-      return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-    }
-    return `${seconds}s`;
-  };
-
-  const calculateSalesVelocity = (
-    unitsSold: number,
-    dropStartTime: string,
-    soldOutAt: string
-  ): { value: number; unit: 'min' | 'hr' | 'day' } => {
-    const durationMs = new Date(soldOutAt).getTime() - new Date(dropStartTime).getTime();
-    if (durationMs <= 0) return { value: 0, unit: 'hr' };
-
-    const hours = durationMs / 3600000;
-
-    if (hours < 1) {
-      return { value: unitsSold / (durationMs / 60000), unit: 'min' };
-    } else if (hours > 24) {
-      return { value: unitsSold / (hours / 24), unit: 'day' };
-    }
-    return { value: unitsSold / hours, unit: 'hr' };
-  };
-
-  const formatVelocity = (value: number, unit: 'min' | 'hr' | 'day'): string => {
-    const formatted = value < 10 ? value.toFixed(1) : Math.round(value).toString();
-    return `${formatted}/${unit}`;
-  };
-
-  const calculateRevenueVelocity = (
-    totalRevenue: number,
-    dropStartTime: string,
-    soldOutAt: string
-  ): { value: number; unit: 'min' | 'hr' | 'day' } => {
-    const durationMs = new Date(soldOutAt).getTime() - new Date(dropStartTime).getTime();
-    if (durationMs <= 0) return { value: 0, unit: 'hr' };
-
-    const hours = durationMs / 3600000;
-
-    if (hours < 1) {
-      return { value: totalRevenue / (durationMs / 60000), unit: 'min' };
-    } else if (hours > 24) {
-      return { value: totalRevenue / (hours / 24), unit: 'day' };
-    }
-    return { value: totalRevenue / hours, unit: 'hr' };
-  };
-
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: 'success' | 'attention' | 'critical' | 'info' } = {
       paid: 'success',
@@ -1090,6 +1027,473 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     );
   };
 
+  const getOrderLink = (order: Order) => {
+    const shopName = shop.replace('.myshopify.com', '');
+    return `https://admin.shopify.com/store/${shopName}/orders/${order.id}`;
+  };
+
+  // Column headings for Orders table
+  const orderHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Order' },
+    { title: 'Customer' },
+    { title: 'Date' },
+    { title: 'Total' },
+    { title: 'Status' },
+    { title: 'Items' },
+    { title: 'Total Units' },
+  ];
+
+  // Sort product summary (memoized)
+  const sortedProductSummary = useMemo(() => {
+    return [...productSummary].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      const direction = productSortDirection;
+
+      switch (productSortColumn) {
+        case 0: // Row index (not sortable)
+          return 0;
+        case 1: // Image (not sortable)
+          return 0;
+        case 2: // Product name
+          aValue = a.productName.toLowerCase();
+          bValue = b.productName.toLowerCase();
+          break;
+        case 3: // Color
+          aValue = a.color.toLowerCase();
+          bValue = b.color.toLowerCase();
+          break;
+        case 4: // Size
+          aValue = a.size.toLowerCase();
+          bValue = b.size.toLowerCase();
+          break;
+        case 5: // SKU
+          aValue = a.sku.toLowerCase();
+          bValue = b.sku.toLowerCase();
+          break;
+        case 6: // Units sold
+          aValue = a.unitsSold;
+          bValue = b.unitsSold;
+          break;
+        case 7: // Remaining inventory
+          aValue = a.remainingInventory;
+          bValue = b.remainingInventory;
+          break;
+        case 8: // Sell-Through Rate
+          aValue = a.sellThroughRate;
+          bValue = b.sellThroughRate;
+          break;
+        case 9: // Total revenue
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+          break;
+        case 10: // Revenue percentage
+          aValue = a.revenuePercentage;
+          bValue = b.revenuePercentage;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+      if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+      return 0;
+    });
+  }, [productSummary, productSortColumn, productSortDirection]);
+
+  // Column headings for Product Summary table
+  const productHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Image' },
+    { title: 'Product Name' },
+    { title: 'Color' },
+    { title: 'Size' },
+    { title: 'SKU' },
+    { title: 'Units Sold' },
+    { title: 'Remaining Inventory' },
+    { title: 'Sell-Through Rate' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Product Summary table (IndexTable)
+  const handleProductSort = (index: number, direction: 'ascending' | 'descending') => {
+    setProductSortColumn(index);
+    setProductSortDirection(direction);
+  };
+
+  // Sort aggregated product summary (memoized)
+  const sortedAggregatedProductSummary = useMemo(() => {
+    return [...aggregatedProductSummary].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      const direction = aggregatedSortDirection;
+
+      switch (aggregatedSortColumn) {
+        case 0: // Row index (not sortable)
+          return 0;
+        case 1: // Image (not sortable)
+          return 0;
+        case 2: // Product name
+          aValue = a.productName.toLowerCase();
+          bValue = b.productName.toLowerCase();
+          break;
+        case 3: // Product type
+          aValue = a.productType.toLowerCase();
+          bValue = b.productType.toLowerCase();
+          break;
+        case 4: // Category
+          aValue = a.category.toLowerCase();
+          bValue = b.category.toLowerCase();
+          break;
+        case 5: // Vendor
+          aValue = a.vendor.toLowerCase();
+          bValue = b.vendor.toLowerCase();
+          break;
+        case 6: // Units sold
+          aValue = a.unitsSold;
+          bValue = b.unitsSold;
+          break;
+        case 7: // Remaining inventory
+          aValue = a.remainingInventory;
+          bValue = b.remainingInventory;
+          break;
+        case 8: // Sell-Through Rate
+          aValue = a.sellThroughRate;
+          bValue = b.sellThroughRate;
+          break;
+        case 9: // Total revenue
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+          break;
+        case 10: // Revenue percentage
+          aValue = a.revenuePercentage;
+          bValue = b.revenuePercentage;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+      if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+      return 0;
+    });
+  }, [aggregatedProductSummary, aggregatedSortColumn, aggregatedSortDirection]);
+
+  // Column headings for Aggregated Product Summary table (By Product)
+  const aggregatedProductHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Image' },
+    { title: 'Product Name' },
+    { title: 'Product Type' },
+    { title: 'Category' },
+    { title: 'Vendor' },
+    { title: 'Units Sold' },
+    { title: 'Remaining Inventory' },
+    { title: 'Sell-Through Rate' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Aggregated Product Summary table
+  const handleAggregatedProductSort = (index: number, direction: 'ascending' | 'descending') => {
+    setAggregatedSortColumn(index);
+    setAggregatedSortDirection(direction);
+  };
+
+  // Sort vendor summary (memoized)
+  const sortedVendorSummary = useMemo(() => {
+    return [...vendorSummary].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      const direction = vendorSortDirection;
+
+      switch (vendorSortColumn) {
+        case 0: // Row index (not sortable)
+          return 0;
+        case 1: // Vendor name
+          aValue = a.vendor.toLowerCase();
+          bValue = b.vendor.toLowerCase();
+          break;
+        case 2: // Products
+          aValue = a.productCount;
+          bValue = b.productCount;
+          break;
+        case 3: // Units sold
+          aValue = a.unitsSold;
+          bValue = b.unitsSold;
+          break;
+        case 4: // Total revenue
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+          break;
+        case 5: // Revenue percentage
+          aValue = a.revenuePercentage;
+          bValue = b.revenuePercentage;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+      if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+      return 0;
+    });
+  }, [vendorSummary, vendorSortColumn, vendorSortDirection]);
+
+  // Column headings for Vendor Summary table
+  const vendorHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Vendor' },
+    { title: 'Products' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Vendor Summary table
+  const handleVendorSort = (index: number, direction: 'ascending' | 'descending') => {
+    setVendorSortColumn(index);
+    setVendorSortDirection(direction);
+  };
+
+  // Sort color summary (memoized)
+  const sortedColorSummary = useMemo(() => {
+    return [...colorSummary].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      const direction = colorSortDirection;
+
+      switch (colorSortColumn) {
+        case 0: // Row index (not sortable)
+          return 0;
+        case 1: // Color name
+          aValue = a.color.toLowerCase();
+          bValue = b.color.toLowerCase();
+          break;
+        case 2: // Variants
+          aValue = a.variantCount;
+          bValue = b.variantCount;
+          break;
+        case 3: // Units sold
+          aValue = a.unitsSold;
+          bValue = b.unitsSold;
+          break;
+        case 4: // Total revenue
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+          break;
+        case 5: // Revenue percentage
+          aValue = a.revenuePercentage;
+          bValue = b.revenuePercentage;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+      if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+      return 0;
+    });
+  }, [colorSummary, colorSortColumn, colorSortDirection]);
+
+  // Column headings for Color Summary table
+  const colorHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Color' },
+    { title: 'Variants' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Color Summary table
+  const handleColorSort = (index: number, direction: 'ascending' | 'descending') => {
+    setColorSortColumn(index);
+    setColorSortDirection(direction);
+  };
+
+  // Sort product type summary (memoized)
+  const sortedProductTypeSummary = useMemo(() => {
+    return [...productTypeSummary].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      const direction = productTypeSortDirection;
+
+      switch (productTypeSortColumn) {
+        case 0: // Row index (not sortable)
+          return 0;
+        case 1: // Product type name
+          aValue = a.productType.toLowerCase();
+          bValue = b.productType.toLowerCase();
+          break;
+        case 2: // Products
+          aValue = a.productCount;
+          bValue = b.productCount;
+          break;
+        case 3: // Units sold
+          aValue = a.unitsSold;
+          bValue = b.unitsSold;
+          break;
+        case 4: // Total revenue
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+          break;
+        case 5: // Revenue percentage
+          aValue = a.revenuePercentage;
+          bValue = b.revenuePercentage;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+      if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+      return 0;
+    });
+  }, [productTypeSummary, productTypeSortColumn, productTypeSortDirection]);
+
+  // Column headings for Product Type Summary table
+  const productTypeHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Product Type' },
+    { title: 'Products' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Product Type Summary table
+  const handleProductTypeSort = (index: number, direction: 'ascending' | 'descending') => {
+    setProductTypeSortColumn(index);
+    setProductTypeSortDirection(direction);
+  };
+
+  // Sort category summary (memoized)
+  const sortedCategorySummary = useMemo(() => {
+    return [...categorySummary].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      const direction = categorySortDirection;
+
+      switch (categorySortColumn) {
+        case 0: // Row index (not sortable)
+          return 0;
+        case 1: // Category name
+          aValue = a.category.toLowerCase();
+          bValue = b.category.toLowerCase();
+          break;
+        case 2: // Products
+          aValue = a.productCount;
+          bValue = b.productCount;
+          break;
+        case 3: // Units sold
+          aValue = a.unitsSold;
+          bValue = b.unitsSold;
+          break;
+        case 4: // Total revenue
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+          break;
+        case 5: // Revenue percentage
+          aValue = a.revenuePercentage;
+          bValue = b.revenuePercentage;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+      if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+      return 0;
+    });
+  }, [categorySummary, categorySortColumn, categorySortDirection]);
+
+  // Column headings for Category Summary table
+  const categoryHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Category' },
+    { title: 'Products' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Category Summary table
+  const handleCategorySort = (index: number, direction: 'ascending' | 'descending') => {
+    setCategorySortColumn(index);
+    setCategorySortDirection(direction);
+  };
+
+  // Tabs for Product Summary section
+  const productSummaryTabs = [
+    { id: 'by-variant', content: 'By Variant' },
+    { id: 'by-product', content: 'By Product' },
+    { id: 'by-color', content: 'By Color' },
+    { id: 'by-vendor', content: 'By Vendor' },
+    { id: 'by-product-type', content: 'By Product Type' },
+    { id: 'by-category', content: 'By Category' },
+  ];
+
+  // Calculate summary metrics (memoized)
+  const salesMetrics = useMemo(() => {
+    const totalOrders = sortedOrders.length;
+    const totalItemsSold = sortedOrders.reduce((sum, order) =>
+      sum + order.line_items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+
+    const grossSales = sortedOrders.reduce((sum, order) =>
+      sum + parseFloat(order.total_line_items_price || order.total_price || '0'), 0);
+    const totalDiscounts = sortedOrders.reduce((sum, order) =>
+      sum + parseFloat(order.total_discounts || '0'), 0);
+    const totalRefunds = sortedOrders.reduce((sum, order) => {
+      if (!order.refunds || order.refunds.length === 0) return sum;
+      return sum + order.refunds.reduce((refundSum, refund) =>
+        refundSum + refund.transactions.reduce((txSum, tx) => txSum + parseFloat(tx.amount || '0'), 0), 0);
+    }, 0);
+    const refundedOrdersCount = sortedOrders.filter(order => order.refunds && order.refunds.length > 0).length;
+    const netSales = grossSales - totalDiscounts - totalRefunds;
+    const avgOrderValue = totalOrders > 0 ? netSales / totalOrders : 0;
+
+    return { totalOrders, totalItemsSold, grossSales, totalDiscounts, totalRefunds, refundedOrdersCount, netSales, avgOrderValue };
+  }, [sortedOrders]);
+
+  const { totalOrders, totalItemsSold, grossSales, totalDiscounts, totalRefunds, refundedOrdersCount, netSales, avgOrderValue } = salesMetrics;
+
+  // Customer metrics (memoized)
+  const customerMetrics = useMemo(() => {
+    const uniqueCustomers = new Set(sortedOrders.map(order => order.email).filter(Boolean)).size;
+    const newCustomers = sortedOrders.filter(order =>
+      order.customer && order.customer.orders_count === 1).length;
+    const returningCustomers = sortedOrders.filter(order =>
+      order.customer && order.customer.orders_count > 1).length;
+    return { uniqueCustomers, newCustomers, returningCustomers };
+  }, [sortedOrders]);
+
+  const { uniqueCustomers, newCustomers, returningCustomers } = customerMetrics;
+
+  // Calculate top 4 best-selling products (memoized)
+  const topProducts = useMemo(() => {
+    const productTotals = new Map<string, { title: string; productId: number; unitsSold: number }>();
+
+    sortedOrders.forEach(order => {
+      order.line_items.forEach(item => {
+        const title = item.title;
+        const existing = productTotals.get(title);
+        if (existing) {
+          existing.unitsSold += item.quantity;
+        } else {
+          productTotals.set(title, { title, productId: item.product_id, unitsSold: item.quantity });
+        }
+      });
+    });
+
+    return Array.from(productTotals.values())
+      .sort((a, b) => b.unitsSold - a.unitsSold)
+      .slice(0, 4);
+  }, [sortedOrders]);
+
+  // Early returns - placed after all hooks to comply with Rules of Hooks
   if (loading) {
     return (
       <Card>
@@ -1172,449 +1576,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     );
   }
 
-  const getOrderLink = (order: Order) => {
-    const shopName = shop.replace('.myshopify.com', '');
-    return `https://admin.shopify.com/store/${shopName}/orders/${order.id}`;
-  };
-
-  // Column headings for Orders table
-  const orderHeadings: [{ title: string }, ...{ title: string }[]] = [
-    { title: '#' },
-    { title: 'Order' },
-    { title: 'Customer' },
-    { title: 'Date' },
-    { title: 'Total' },
-    { title: 'Status' },
-    { title: 'Items' },
-    { title: 'Total Units' },
-  ];
-
-  // Sort product summary
-  const sortedProductSummary = [...productSummary].sort((a, b) => {
-    let aValue: any;
-    let bValue: any;
-    const direction = productSortDirection;
-
-    switch (productSortColumn) {
-      case 0: // Row index (not sortable)
-        return 0;
-      case 1: // Image (not sortable)
-        return 0;
-      case 2: // Product name
-        aValue = a.productName.toLowerCase();
-        bValue = b.productName.toLowerCase();
-        break;
-      case 3: // Color
-        aValue = a.color.toLowerCase();
-        bValue = b.color.toLowerCase();
-        break;
-      case 4: // Size
-        aValue = a.size.toLowerCase();
-        bValue = b.size.toLowerCase();
-        break;
-      case 5: // SKU
-        aValue = a.sku.toLowerCase();
-        bValue = b.sku.toLowerCase();
-        break;
-      case 6: // Units sold
-        aValue = a.unitsSold;
-        bValue = b.unitsSold;
-        break;
-      case 7: // Remaining inventory
-        aValue = a.remainingInventory;
-        bValue = b.remainingInventory;
-        break;
-      case 8: // Sell-Through Rate
-        aValue = a.sellThroughRate;
-        bValue = b.sellThroughRate;
-        break;
-      case 9: // Total revenue
-        aValue = a.totalRevenue;
-        bValue = b.totalRevenue;
-        break;
-      case 10: // Revenue percentage
-        aValue = a.revenuePercentage;
-        bValue = b.revenuePercentage;
-        break;
-      default:
-        return 0;
-    }
-
-    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
-    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
-    return 0;
-  });
-
-  // Column headings for Product Summary table
-  const productHeadings: [{ title: string }, ...{ title: string }[]] = [
-    { title: '#' },
-    { title: 'Image' },
-    { title: 'Product Name' },
-    { title: 'Color' },
-    { title: 'Size' },
-    { title: 'SKU' },
-    { title: 'Units Sold' },
-    { title: 'Remaining Inventory' },
-    { title: 'Sell-Through Rate' },
-    { title: 'Total Revenue' },
-    { title: 'Revenue %' },
-  ];
-
-  // Handle sort for Product Summary table (IndexTable)
-  const handleProductSort = (index: number, direction: 'ascending' | 'descending') => {
-    setProductSortColumn(index);
-    setProductSortDirection(direction);
-  };
-
-  // Sort aggregated product summary
-  const sortedAggregatedProductSummary = [...aggregatedProductSummary].sort((a, b) => {
-    let aValue: any;
-    let bValue: any;
-    const direction = aggregatedSortDirection;
-
-    switch (aggregatedSortColumn) {
-      case 0: // Row index (not sortable)
-        return 0;
-      case 1: // Image (not sortable)
-        return 0;
-      case 2: // Product name
-        aValue = a.productName.toLowerCase();
-        bValue = b.productName.toLowerCase();
-        break;
-      case 3: // Product type
-        aValue = a.productType.toLowerCase();
-        bValue = b.productType.toLowerCase();
-        break;
-      case 4: // Category
-        aValue = a.category.toLowerCase();
-        bValue = b.category.toLowerCase();
-        break;
-      case 5: // Vendor
-        aValue = a.vendor.toLowerCase();
-        bValue = b.vendor.toLowerCase();
-        break;
-      case 6: // Units sold
-        aValue = a.unitsSold;
-        bValue = b.unitsSold;
-        break;
-      case 7: // Remaining inventory
-        aValue = a.remainingInventory;
-        bValue = b.remainingInventory;
-        break;
-      case 8: // Sell-Through Rate
-        aValue = a.sellThroughRate;
-        bValue = b.sellThroughRate;
-        break;
-      case 9: // Total revenue
-        aValue = a.totalRevenue;
-        bValue = b.totalRevenue;
-        break;
-      case 10: // Revenue percentage
-        aValue = a.revenuePercentage;
-        bValue = b.revenuePercentage;
-        break;
-      default:
-        return 0;
-    }
-
-    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
-    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
-    return 0;
-  });
-
-  // Column headings for Aggregated Product Summary table (By Product)
-  const aggregatedProductHeadings: [{ title: string }, ...{ title: string }[]] = [
-    { title: '#' },
-    { title: 'Image' },
-    { title: 'Product Name' },
-    { title: 'Product Type' },
-    { title: 'Category' },
-    { title: 'Vendor' },
-    { title: 'Units Sold' },
-    { title: 'Remaining Inventory' },
-    { title: 'Sell-Through Rate' },
-    { title: 'Total Revenue' },
-    { title: 'Revenue %' },
-  ];
-
-  // Handle sort for Aggregated Product Summary table
-  const handleAggregatedProductSort = (index: number, direction: 'ascending' | 'descending') => {
-    setAggregatedSortColumn(index);
-    setAggregatedSortDirection(direction);
-  };
-
-  // Sort vendor summary
-  const sortedVendorSummary = [...vendorSummary].sort((a, b) => {
-    let aValue: any;
-    let bValue: any;
-    const direction = vendorSortDirection;
-
-    switch (vendorSortColumn) {
-      case 0: // Row index (not sortable)
-        return 0;
-      case 1: // Vendor name
-        aValue = a.vendor.toLowerCase();
-        bValue = b.vendor.toLowerCase();
-        break;
-      case 2: // Products
-        aValue = a.productCount;
-        bValue = b.productCount;
-        break;
-      case 3: // Units sold
-        aValue = a.unitsSold;
-        bValue = b.unitsSold;
-        break;
-      case 4: // Total revenue
-        aValue = a.totalRevenue;
-        bValue = b.totalRevenue;
-        break;
-      case 5: // Revenue percentage
-        aValue = a.revenuePercentage;
-        bValue = b.revenuePercentage;
-        break;
-      default:
-        return 0;
-    }
-
-    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
-    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
-    return 0;
-  });
-
-  // Column headings for Vendor Summary table
-  const vendorHeadings: [{ title: string }, ...{ title: string }[]] = [
-    { title: '#' },
-    { title: 'Vendor' },
-    { title: 'Products' },
-    { title: 'Units Sold' },
-    { title: 'Total Revenue' },
-    { title: 'Revenue %' },
-  ];
-
-  // Handle sort for Vendor Summary table
-  const handleVendorSort = (index: number, direction: 'ascending' | 'descending') => {
-    setVendorSortColumn(index);
-    setVendorSortDirection(direction);
-  };
-
-  // Sort color summary
-  const sortedColorSummary = [...colorSummary].sort((a, b) => {
-    let aValue: any;
-    let bValue: any;
-    const direction = colorSortDirection;
-
-    switch (colorSortColumn) {
-      case 0: // Row index (not sortable)
-        return 0;
-      case 1: // Color name
-        aValue = a.color.toLowerCase();
-        bValue = b.color.toLowerCase();
-        break;
-      case 2: // Variants
-        aValue = a.variantCount;
-        bValue = b.variantCount;
-        break;
-      case 3: // Units sold
-        aValue = a.unitsSold;
-        bValue = b.unitsSold;
-        break;
-      case 4: // Total revenue
-        aValue = a.totalRevenue;
-        bValue = b.totalRevenue;
-        break;
-      case 5: // Revenue percentage
-        aValue = a.revenuePercentage;
-        bValue = b.revenuePercentage;
-        break;
-      default:
-        return 0;
-    }
-
-    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
-    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
-    return 0;
-  });
-
-  // Column headings for Color Summary table
-  const colorHeadings: [{ title: string }, ...{ title: string }[]] = [
-    { title: '#' },
-    { title: 'Color' },
-    { title: 'Variants' },
-    { title: 'Units Sold' },
-    { title: 'Total Revenue' },
-    { title: 'Revenue %' },
-  ];
-
-  // Handle sort for Color Summary table
-  const handleColorSort = (index: number, direction: 'ascending' | 'descending') => {
-    setColorSortColumn(index);
-    setColorSortDirection(direction);
-  };
-
-  // Sort product type summary
-  const sortedProductTypeSummary = [...productTypeSummary].sort((a, b) => {
-    let aValue: any;
-    let bValue: any;
-    const direction = productTypeSortDirection;
-
-    switch (productTypeSortColumn) {
-      case 0: // Row index (not sortable)
-        return 0;
-      case 1: // Product type name
-        aValue = a.productType.toLowerCase();
-        bValue = b.productType.toLowerCase();
-        break;
-      case 2: // Products
-        aValue = a.productCount;
-        bValue = b.productCount;
-        break;
-      case 3: // Units sold
-        aValue = a.unitsSold;
-        bValue = b.unitsSold;
-        break;
-      case 4: // Total revenue
-        aValue = a.totalRevenue;
-        bValue = b.totalRevenue;
-        break;
-      case 5: // Revenue percentage
-        aValue = a.revenuePercentage;
-        bValue = b.revenuePercentage;
-        break;
-      default:
-        return 0;
-    }
-
-    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
-    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
-    return 0;
-  });
-
-  // Column headings for Product Type Summary table
-  const productTypeHeadings: [{ title: string }, ...{ title: string }[]] = [
-    { title: '#' },
-    { title: 'Product Type' },
-    { title: 'Products' },
-    { title: 'Units Sold' },
-    { title: 'Total Revenue' },
-    { title: 'Revenue %' },
-  ];
-
-  // Handle sort for Product Type Summary table
-  const handleProductTypeSort = (index: number, direction: 'ascending' | 'descending') => {
-    setProductTypeSortColumn(index);
-    setProductTypeSortDirection(direction);
-  };
-
-  // Sort category summary
-  const sortedCategorySummary = [...categorySummary].sort((a, b) => {
-    let aValue: any;
-    let bValue: any;
-    const direction = categorySortDirection;
-
-    switch (categorySortColumn) {
-      case 0: // Row index (not sortable)
-        return 0;
-      case 1: // Category name
-        aValue = a.category.toLowerCase();
-        bValue = b.category.toLowerCase();
-        break;
-      case 2: // Products
-        aValue = a.productCount;
-        bValue = b.productCount;
-        break;
-      case 3: // Units sold
-        aValue = a.unitsSold;
-        bValue = b.unitsSold;
-        break;
-      case 4: // Total revenue
-        aValue = a.totalRevenue;
-        bValue = b.totalRevenue;
-        break;
-      case 5: // Revenue percentage
-        aValue = a.revenuePercentage;
-        bValue = b.revenuePercentage;
-        break;
-      default:
-        return 0;
-    }
-
-    if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
-    if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
-    return 0;
-  });
-
-  // Column headings for Category Summary table
-  const categoryHeadings: [{ title: string }, ...{ title: string }[]] = [
-    { title: '#' },
-    { title: 'Category' },
-    { title: 'Products' },
-    { title: 'Units Sold' },
-    { title: 'Total Revenue' },
-    { title: 'Revenue %' },
-  ];
-
-  // Handle sort for Category Summary table
-  const handleCategorySort = (index: number, direction: 'ascending' | 'descending') => {
-    setCategorySortColumn(index);
-    setCategorySortDirection(direction);
-  };
-
-  // Tabs for Product Summary section
-  const productSummaryTabs = [
-    { id: 'by-variant', content: 'By Variant' },
-    { id: 'by-product', content: 'By Product' },
-    { id: 'by-color', content: 'By Color' },
-    { id: 'by-vendor', content: 'By Vendor' },
-    { id: 'by-product-type', content: 'By Product Type' },
-    { id: 'by-category', content: 'By Category' },
-  ];
-
-  // Calculate summary metrics
-  const totalOrders = sortedOrders.length;
-  const totalItemsSold = sortedOrders.reduce((sum, order) =>
-    sum + order.line_items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
-
-  // Sales metrics
-  const grossSales = sortedOrders.reduce((sum, order) =>
-    sum + parseFloat(order.total_line_items_price || order.total_price || '0'), 0);
-  const totalDiscounts = sortedOrders.reduce((sum, order) =>
-    sum + parseFloat(order.total_discounts || '0'), 0);
-  const totalRefunds = sortedOrders.reduce((sum, order) => {
-    if (!order.refunds || order.refunds.length === 0) return sum;
-    return sum + order.refunds.reduce((refundSum, refund) =>
-      refundSum + refund.transactions.reduce((txSum, tx) => txSum + parseFloat(tx.amount || '0'), 0), 0);
-  }, 0);
-  const refundedOrdersCount = sortedOrders.filter(order => order.refunds && order.refunds.length > 0).length;
-  const netSales = grossSales - totalDiscounts - totalRefunds;
-  const avgOrderValue = totalOrders > 0 ? netSales / totalOrders : 0;
-
-  // Customer metrics
-  const uniqueCustomers = new Set(sortedOrders.map(order => order.email).filter(Boolean)).size;
-  const newCustomers = sortedOrders.filter(order =>
-    order.customer && order.customer.orders_count === 1).length;
-  const returningCustomers = sortedOrders.filter(order =>
-    order.customer && order.customer.orders_count > 1).length;
-  // Calculate top 4 best-selling products (aggregated by product, not variant)
-  const topProducts = (() => {
-    const productTotals = new Map<string, { title: string; productId: number; unitsSold: number }>();
-
-    sortedOrders.forEach(order => {
-      order.line_items.forEach(item => {
-        const title = item.title;
-        const existing = productTotals.get(title);
-        if (existing) {
-          existing.unitsSold += item.quantity;
-        } else {
-          productTotals.set(title, { title, productId: item.product_id, unitsSold: item.quantity });
-        }
-      });
-    });
-
-    return Array.from(productTotals.values())
-      .sort((a, b) => b.unitsSold - a.unitsSold)
-      .slice(0, 4);
-  })();
-
   // Helper function to format currency
   const formatCurrency = (amount: number) => {
     return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1681,75 +1642,13 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     document.body.removeChild(link);
   };
 
-  // Quick date preset functions
-  const setPresetToday = () => {
-    const today = new Date().toISOString().split('T')[0];
-    setFilterStartDate(today);
-    setFilterStartTime('00:00');
-    setFilterEndDate(today);
-    setFilterEndTime('23:59');
-  };
-
-  const setPresetYesterday = () => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
-    setFilterStartDate(yesterdayStr);
-    setFilterStartTime('00:00');
-    setFilterEndDate(yesterdayStr);
-    setFilterEndTime('23:59');
-  };
-
-  const setPresetThisWeek = () => {
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - dayOfWeek); // Sunday
-    const today = now.toISOString().split('T')[0];
-    setFilterStartDate(startOfWeek.toISOString().split('T')[0]);
-    setFilterStartTime('00:00');
-    setFilterEndDate(today);
-    setFilterEndTime('23:59');
-  };
-
-  const setPresetLastWeek = () => {
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const startOfLastWeek = new Date(now);
-    startOfLastWeek.setDate(now.getDate() - dayOfWeek - 7); // Last Sunday
-    const endOfLastWeek = new Date(startOfLastWeek);
-    endOfLastWeek.setDate(startOfLastWeek.getDate() + 6); // Last Saturday
-    setFilterStartDate(startOfLastWeek.toISOString().split('T')[0]);
-    setFilterStartTime('00:00');
-    setFilterEndDate(endOfLastWeek.toISOString().split('T')[0]);
-    setFilterEndTime('23:59');
-  };
-
-  const setPresetThisMonth = () => {
-    const now = new Date();
-    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const today = now.toISOString().split('T')[0];
-    setFilterStartDate(firstOfMonth.toISOString().split('T')[0]);
-    setFilterStartTime('00:00');
-    setFilterEndDate(today);
-    setFilterEndTime('23:59');
-  };
-
-  const setPresetLastMonth = () => {
-    const now = new Date();
-    const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-    setFilterStartDate(firstOfLastMonth.toISOString().split('T')[0]);
-    setFilterStartTime('00:00');
-    setFilterEndDate(lastOfLastMonth.toISOString().split('T')[0]);
-    setFilterEndTime('23:59');
-  };
-
-  const setPresetAll = () => {
-    setFilterStartDate('');
-    setFilterStartTime('00:00');
-    setFilterEndDate('');
-    setFilterEndTime('23:59');
+  // Handle date preset selection
+  const handlePresetClick = (preset: DatePreset) => {
+    const { startDate, endDate, startTime, endTime } = getDatePreset(preset);
+    setFilterStartDate(startDate);
+    setFilterStartTime(startTime);
+    setFilterEndDate(endDate);
+    setFilterEndTime(endTime);
   };
 
   return (
@@ -1759,255 +1658,28 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
       {/* Filters Section (only in explore mode) */}
       {isExploreMode && (
-        <Card>
-          <BlockStack gap="400">
-            <InlineStack align="space-between">
-              <Text as="h2" variant="headingLg">
-                Explore Orders
-              </Text>
-              <InlineStack gap="200">
-                <Button onClick={setPresetToday} size="slim" variant={filterStartDate === new Date().toISOString().split('T')[0] && filterEndDate === new Date().toISOString().split('T')[0] ? 'primary' : 'secondary'}>
-                  Today
-                </Button>
-                <Button onClick={setPresetYesterday} size="slim">
-                  Yesterday
-                </Button>
-                <Button onClick={setPresetThisWeek} size="slim">
-                  This Week
-                </Button>
-                <Button onClick={setPresetLastWeek} size="slim">
-                  Last Week
-                </Button>
-                <Button onClick={setPresetThisMonth} size="slim">
-                  This Month
-                </Button>
-                <Button onClick={setPresetLastMonth} size="slim">
-                  Last Month
-                </Button>
-                <Button onClick={setPresetAll} size="slim">
-                  All
-                </Button>
-              </InlineStack>
-            </InlineStack>
-            <Text as="p" variant="bodySm" tone="subdued">
-              Analyze orders from any date range, including beyond your drop dates
-            </Text>
-            <FormLayout>
-              <FormLayout.Group>
-                <TextField
-                  label="Start Date"
-                  type="date"
-                  value={filterStartDate}
-                  onChange={setFilterStartDate}
-                  autoComplete="off"
-                />
-                <TextField
-                  label="Start Time"
-                  type="time"
-                  value={filterStartTime}
-                  onChange={setFilterStartTime}
-                  autoComplete="off"
-                />
-                <TextField
-                  label="End Date"
-                  type="date"
-                  value={filterEndDate}
-                  onChange={setFilterEndDate}
-                  autoComplete="off"
-                />
-                <TextField
-                  label="End Time"
-                  type="time"
-                  value={filterEndTime}
-                  onChange={setFilterEndTime}
-                  autoComplete="off"
-                />
-              </FormLayout.Group>
-            </FormLayout>
-            {onCreateDrop && filterStartDate && filterEndDate && (
-              <InlineStack align="end">
-                <Button
-                  variant="primary"
-                  onClick={() => onCreateDrop(filterStartDate, filterStartTime, filterEndDate, filterEndTime)}
-                >
-                  Create Drop from Selection
-                </Button>
-              </InlineStack>
-            )}
-          </BlockStack>
-        </Card>
+        <FilterSection
+          filterStartDate={filterStartDate}
+          filterStartTime={filterStartTime}
+          filterEndDate={filterEndDate}
+          filterEndTime={filterEndTime}
+          onStartDateChange={setFilterStartDate}
+          onStartTimeChange={setFilterStartTime}
+          onEndDateChange={setFilterEndDate}
+          onEndTimeChange={setFilterEndTime}
+          onPresetClick={handlePresetClick}
+          onCreateDrop={onCreateDrop}
+        />
       )}
 
       {/* Summary Metrics Section */}
-      <Card>
-        <BlockStack gap="400">
-          <Text as="h2" variant="headingLg">
-            Drop Summary
-          </Text>
-          <Text as="p" variant="bodySm" tone="subdued">
-            Key metrics and statistics for your drop including revenue, orders, and customer data
-          </Text>
-          {/* Row 1: Sales Metrics */}
-          <InlineStack gap="800" align="start" wrap>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Gross Sales
-              </Text>
-              <Text as="p" variant="headingLg">
-                {formatCurrency(grossSales)}
-              </Text>
-            </BlockStack>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Discounts
-              </Text>
-              <Text as="p" variant="headingLg" tone={totalDiscounts > 0 ? 'caution' : undefined}>
-                -{formatCurrency(totalDiscounts)}
-              </Text>
-            </BlockStack>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Returns
-              </Text>
-              <Text as="p" variant="headingLg" tone={refundedOrdersCount > 0 ? 'critical' : undefined}>
-                {refundedOrdersCount.toLocaleString()}
-              </Text>
-            </BlockStack>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Net Sales
-              </Text>
-              <Text as="p" variant="headingLg" fontWeight="bold">
-                {formatCurrency(netSales)}
-              </Text>
-            </BlockStack>
-          </InlineStack>
-          {/* Row 2: Orders & Customers */}
-          <InlineStack gap="800" align="start" wrap>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Orders
-              </Text>
-              <Text as="p" variant="headingLg">
-                {totalOrders.toLocaleString()}
-              </Text>
-            </BlockStack>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Avg Order Value
-              </Text>
-              <Text as="p" variant="headingLg">
-                {formatCurrency(avgOrderValue)}
-              </Text>
-            </BlockStack>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Items Sold
-              </Text>
-              <Text as="p" variant="headingLg">
-                {totalItemsSold.toLocaleString()}
-              </Text>
-            </BlockStack>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Customers
-              </Text>
-              <Text as="p" variant="headingLg">
-                {uniqueCustomers.toLocaleString()}
-              </Text>
-            </BlockStack>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                New Customers
-              </Text>
-              <Text as="p" variant="headingLg" tone="success">
-                {newCustomers.toLocaleString()}
-              </Text>
-            </BlockStack>
-            <BlockStack gap="100">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Returning
-              </Text>
-              <Text as="p" variant="headingLg">
-                {returningCustomers.toLocaleString()}
-              </Text>
-            </BlockStack>
-          </InlineStack>
-          {topProducts.length > 0 && (
-            <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Top Sellers</Text>
-              <InlineStack gap="400" align="start">
-                {topProducts.map((p, rank) => {
-                  const imageUrl = productImages[String(p.productId)];
-                  return (
-                    <div
-                      key={p.title}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '12px',
-                        backgroundColor: '#f6f6f7',
-                        borderRadius: '8px',
-                        minWidth: '200px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '24px',
-                          height: '24px',
-                          backgroundColor: rank === 0 ? '#ffd700' : rank === 1 ? '#c0c0c0' : rank === 2 ? '#cd7f32' : '#6b7280',
-                          borderRadius: '50%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: rank === 0 ? '#000' : '#fff',
-                          fontWeight: 'bold',
-                          fontSize: '12px',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {rank + 1}
-                      </div>
-                      {imageUrl ? (
-                        <img
-                          src={imageUrl}
-                          alt={p.title}
-                          style={{
-                            width: '40px',
-                            height: '40px',
-                            objectFit: 'cover',
-                            borderRadius: '4px',
-                            flexShrink: 0,
-                          }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            width: '40px',
-                            height: '40px',
-                            backgroundColor: '#e1e1e1',
-                            borderRadius: '4px',
-                            flexShrink: 0,
-                          }}
-                        />
-                      )}
-                      <div style={{ overflow: 'hidden' }}>
-                        <Text as="p" variant="bodySm" fontWeight="semibold" truncate>
-                          {p.title}
-                        </Text>
-                        <Text as="p" variant="bodySm" tone="subdued">
-                          {p.unitsSold} sold
-                        </Text>
-                      </div>
-                    </div>
-                  );
-                })}
-              </InlineStack>
-            </BlockStack>
-          )}
-        </BlockStack>
-      </Card>
+      <SummaryMetricsCard
+        salesMetrics={salesMetrics}
+        customerMetrics={customerMetrics}
+        topProducts={topProducts}
+        productImages={productImages}
+        formatCurrency={formatCurrency}
+      />
 
       {/* Inventory Loading Indicator */}
       {inventoryLoading && !isExploreMode && (
@@ -2022,113 +1694,12 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       )}
 
       {/* Sold Out Variants Section (only in drop analysis mode) */}
-      {!isExploreMode && sortedProductSummary.filter(p => p.remainingInventory <= 0).length > 0 && (
-        <Card>
-          <BlockStack gap="400">
-            <InlineStack gap="200" align="start" blockAlign="center">
-              <Text as="h2" variant="headingLg">
-                Sold Out Variants
-              </Text>
-              <Badge tone="critical">
-                {sortedProductSummary.filter(p => p.remainingInventory <= 0).length.toString()}
-              </Badge>
-            </InlineStack>
-            <Text as="p" variant="bodySm" tone="subdued">
-              Products that have reached 100% sell-through based on starting inventory
-            </Text>
-            <InlineStack gap="400" wrap>
-              {sortedProductSummary
-                .filter(p => p.remainingInventory <= 0)
-                .map((product) => (
-                  <div
-                    key={`${product.productId}-${product.variantId}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px',
-                      backgroundColor: '#fef2f2',
-                      border: '1px solid #fecaca',
-                      borderRadius: '8px',
-                      minWidth: '220px',
-                    }}
-                  >
-                    {product.imageUrl ? (
-                      <img
-                        src={product.imageUrl}
-                        alt={product.productName}
-                        style={{
-                          width: '50px',
-                          height: '50px',
-                          objectFit: 'cover',
-                          borderRadius: '4px',
-                          flexShrink: 0,
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: '50px',
-                          height: '50px',
-                          backgroundColor: '#e1e1e1',
-                          borderRadius: '4px',
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                    <div style={{ flex: 1, overflow: 'hidden' }}>
-                      <BlockStack gap="050">
-                        <Text as="p" variant="bodySm" fontWeight="semibold" truncate>
-                          {product.productName}
-                        </Text>
-                        {(product.color || product.size) && (
-                          <Text as="p" variant="bodySm" tone="subdued">
-                            {[product.color, product.size].filter(Boolean).join(' / ')}
-                          </Text>
-                        )}
-                      </BlockStack>
-                      <div style={{ marginTop: '8px' }}>
-                        <BlockStack gap="100">
-                          <Text as="p" variant="bodySm" tone="critical">
-                            {product.unitsSold} sold (100%)
-                          </Text>
-                          {product.soldOutAt && dropStartTime && (() => {
-                            const salesVel = calculateSalesVelocity(
-                              product.unitsSold,
-                              dropStartTime,
-                              product.soldOutAt
-                            );
-                            const revVel = calculateRevenueVelocity(
-                              product.totalRevenue,
-                              dropStartTime,
-                              product.soldOutAt
-                            );
-
-                            return (
-                              <InlineStack gap="200" wrap={false}>
-                                <Text as="span" variant="bodySm">
-                                  {formatVelocity(salesVel.value, salesVel.unit)} units
-                                </Text>
-                                <Text as="span" variant="bodySm" tone="subdued">•</Text>
-                                <Text as="span" variant="bodySm" tone="success">
-                                  {formatCurrency(revVel.value)}/{revVel.unit}
-                                </Text>
-                              </InlineStack>
-                            );
-                          })()}
-                          {product.soldOutAt && dropStartTime && (
-                            <Text as="p" variant="bodySm" tone="success">
-                              Sold out in {formatDuration(dropStartTime, product.soldOutAt)}
-                            </Text>
-                          )}
-                        </BlockStack>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </InlineStack>
-          </BlockStack>
-        </Card>
+      {!isExploreMode && (
+        <SoldOutVariantsSection
+          soldOutVariants={sortedProductSummary.filter(p => p.remainingInventory <= 0)}
+          dropStartTime={dropStartTime}
+          formatCurrency={formatCurrency}
+        />
       )}
 
       {/* Product Sales Summary Section (only in drop analysis mode) */}
