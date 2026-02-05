@@ -194,23 +194,23 @@ async function runOrderSync(
   force: boolean,
   signal: AbortSignal
 ): Promise<void> {
-  const client = new shopify.clients.Rest({ session });
+  const client = new shopify.clients.Graphql({ session });
 
-  let pageInfo: string | undefined = undefined;
+  let cursor: string | null = null;
   let hasNextPage = true;
   let totalSynced = 0;
 
-  // For incremental sync, get the latest order ID
-  const sinceId = force ? null : getLatestOrderId(shop);
+  // For incremental sync, get the latest order date
+  const previousLatestOrderId = force ? null : getLatestOrderId(shop);
 
-  console.log(`Starting order sync for ${shop} (${force ? 'full' : 'incremental'}${sinceId ? `, since_id=${sinceId}` : ''})`);
+  console.log(`Starting order sync for ${shop} (${force ? 'full' : 'incremental'}${previousLatestOrderId ? `, since order ${previousLatestOrderId}` : ''})`);
 
-  // Check if we have a saved page_info from interrupted sync
+  // Check if we have a saved cursor from interrupted sync
   const savedStatus = getSyncStatus(shop);
   if (!force && savedStatus.nextPageInfo) {
-    pageInfo = savedStatus.nextPageInfo;
+    cursor = savedStatus.nextPageInfo;
     totalSynced = savedStatus.syncedOrders;
-    console.log(`Resuming sync from page_info, already synced: ${totalSynced}`);
+    console.log(`Resuming sync from cursor, already synced: ${totalSynced}`);
   }
 
   while (hasNextPage) {
@@ -219,18 +219,101 @@ async function runOrderSync(
       throw new Error('Sync cancelled');
     }
 
-    // Build query params
-    const query: Record<string, string> = pageInfo
-      ? { limit: '250', page_info: pageInfo }
-      : {
-          limit: '250',
-          status: 'any',
-          ...(sinceId && !force ? { since_id: sinceId } : {}),
-        };
+    // GraphQL query to fetch orders with customer numberOfOrders
+    const query = `
+      query GetOrders($cursor: String) {
+        orders(first: 250, after: $cursor, sortKey: CREATED_AT, reverse: true) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          edges {
+            node {
+              id
+              legacyResourceId
+              name
+              email
+              createdAt
+              totalPriceSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              subtotalPriceSet {
+                shopMoney {
+                  amount
+                }
+              }
+              totalTaxSet {
+                shopMoney {
+                  amount
+                }
+              }
+              totalDiscountsSet {
+                shopMoney {
+                  amount
+                }
+              }
+              currencyCode
+              displayFinancialStatus
+              tags
+              customer {
+                id
+                legacyResourceId
+                email
+                numberOfOrders
+              }
+              lineItems(first: 250) {
+                edges {
+                  node {
+                    id
+                    title
+                    quantity
+                    originalUnitPriceSet {
+                      shopMoney {
+                        amount
+                      }
+                    }
+                    variantTitle
+                    sku
+                    product {
+                      id
+                      legacyResourceId
+                    }
+                    variant {
+                      id
+                      legacyResourceId
+                    }
+                  }
+                }
+              }
+              refunds {
+                id
+                legacyResourceId
+                createdAt
+                transactions(first: 10) {
+                  edges {
+                    node {
+                      id
+                      amountSet {
+                        shopMoney {
+                          amount
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
 
     // Fetch page with rate limiting
     const response = await rateLimitedRequest(
-      () => client.get({ path: 'orders', query }),
+      () => client.request(query, { variables: { cursor } }),
       {
         maxRetries: 5,
         onRetry: (attempt, error, backoffMs) => {
@@ -241,7 +324,56 @@ async function runOrderSync(
       }
     );
 
-    const orders = (response.body as any).orders as CachedOrder[];
+    const data = response.data as any;
+    const ordersConnection = data?.orders;
+
+    if (!ordersConnection) {
+      throw new Error('Invalid GraphQL response: missing orders data');
+    }
+
+    // Transform GraphQL response to REST-like format for compatibility
+    const orders: CachedOrder[] = ordersConnection.edges.map((edge: any) => {
+      const node = edge.node;
+
+      return {
+        id: parseInt(node.legacyResourceId, 10),
+        order_number: parseInt(node.name.replace('#', ''), 10),
+        email: node.email,
+        created_at: node.createdAt,
+        total_price: node.totalPriceSet.shopMoney.amount,
+        subtotal_price: node.subtotalPriceSet.shopMoney.amount,
+        total_tax: node.totalTaxSet?.shopMoney?.amount || '0',
+        total_discounts: node.totalDiscountsSet?.shopMoney?.amount || '0',
+        currency: node.currencyCode,
+        financial_status: node.displayFinancialStatus?.toLowerCase() || 'pending',
+        tags: node.tags.join(', '),
+        customer: node.customer ? {
+          id: parseInt(node.customer.legacyResourceId, 10),
+          email: node.customer.email,
+          orders_count: node.customer.numberOfOrders || 0,
+        } : null,
+        line_items: node.lineItems.edges.map((lineEdge: any) => {
+          const lineNode = lineEdge.node;
+          return {
+            id: parseInt(lineNode.id.split('/').pop(), 10),
+            title: lineNode.title,
+            quantity: lineNode.quantity,
+            price: lineNode.originalUnitPriceSet.shopMoney.amount,
+            variant_title: lineNode.variantTitle,
+            sku: lineNode.sku,
+            product_id: lineNode.product?.legacyResourceId ? parseInt(lineNode.product.legacyResourceId, 10) : 0,
+            variant_id: lineNode.variant?.legacyResourceId ? parseInt(lineNode.variant.legacyResourceId, 10) : 0,
+          };
+        }),
+        refunds: node.refunds?.map((refund: any) => ({
+          id: parseInt(refund.legacyResourceId, 10),
+          created_at: refund.createdAt,
+          transactions: refund.transactions.edges.map((txEdge: any) => ({
+            amount: txEdge.node.amountSet.shopMoney.amount,
+          })),
+        })) || [],
+      };
+    });
 
     if (orders.length > 0) {
       // Store orders immediately (crash-safe)
@@ -251,27 +383,16 @@ async function runOrderSync(
       console.log(`Synced ${stored} orders for ${shop}, total: ${totalSynced}`);
     }
 
-    // Parse Link header for pagination
-    const headers = response.headers as Record<string, string | string[] | undefined>;
-    const linkHeader = headers?.link || headers?.Link;
-    const linkStr = Array.isArray(linkHeader) ? linkHeader[0] : linkHeader;
+    // Handle pagination
+    hasNextPage = ordersConnection.pageInfo.hasNextPage;
+    cursor = ordersConnection.pageInfo.endCursor;
 
-    if (linkStr && linkStr.includes('rel="next"')) {
-      const nextMatch =
-        linkStr.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/) ||
-        linkStr.match(/page_info=([^&>;]+).*rel="next"/);
-      if (nextMatch) {
-        pageInfo = nextMatch[1];
-        // Save progress for crash recovery
-        updateSyncStatus(shop, {
-          syncedOrders: totalSynced,
-          nextPageInfo: pageInfo,
-        });
-      } else {
-        hasNextPage = false;
-      }
-    } else {
-      hasNextPage = false;
+    if (hasNextPage && cursor) {
+      // Save progress for crash recovery
+      updateSyncStatus(shop, {
+        syncedOrders: totalSynced,
+        nextPageInfo: cursor,
+      });
     }
 
     // Broadcast progress event
@@ -279,7 +400,7 @@ async function runOrderSync(
       type: 'progress',
       shop,
       synced: totalSynced,
-      total: null, // Shopify doesn't provide total count upfront
+      total: null, // GraphQL doesn't provide total count upfront
     });
 
     // Update status in database
