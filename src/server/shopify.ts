@@ -50,13 +50,19 @@ router.get('/callback', async (req, res) => {
 
     const { session } = callback;
 
-    // Store session persistently in SQLite
+    // Store session persistently
     storeSession(session);
 
-    // Log access token for bulk order generation script
-    console.log('\n🔑 Access Token (add to .env as SHOPIFY_ACCESS_TOKEN):');
-    console.log(session.accessToken);
-    console.log('');
+    console.log(`✅ OAuth completed successfully for ${session.shop}`);
+
+    // Register webhooks with Shopify
+    try {
+      await registerWebhooks(session);
+      console.log(`✅ Webhooks registered for ${session.shop}`);
+    } catch (webhookError) {
+      console.error(`Failed to register webhooks for ${session.shop}:`, webhookError);
+      // Don't fail the installation, just log the error
+    }
 
     // Trigger initial order sync in background (don't await)
     startOrderSync(session.shop, false).then(result => {
@@ -77,5 +83,48 @@ router.get('/callback', async (req, res) => {
 export const getSession = (shop: string): Session | undefined => {
   return loadSessionByShop(shop);
 };
+
+/**
+ * Register mandatory webhooks with Shopify
+ */
+async function registerWebhooks(session: Session): Promise<void> {
+  const client = new shopify.clients.Rest({ session });
+  const webhookBaseUrl = `${config.appUrl}/api/webhooks`;
+
+  const webhooks = [
+    // GDPR Mandatory Webhooks
+    { topic: 'customers/data_request', address: `${webhookBaseUrl}/customers/data_request` },
+    { topic: 'customers/redact', address: `${webhookBaseUrl}/customers/redact` },
+    { topic: 'shop/redact', address: `${webhookBaseUrl}/shop/redact` },
+    // App Lifecycle
+    { topic: 'app/uninstalled', address: `${webhookBaseUrl}/app/uninstalled` },
+    // Optional: Real-time order sync
+    // { topic: 'orders/create', address: `${webhookBaseUrl}/orders/create` },
+  ];
+
+  for (const webhook of webhooks) {
+    try {
+      await client.post({
+        path: 'webhooks',
+        data: {
+          webhook: {
+            topic: webhook.topic,
+            address: webhook.address,
+            format: 'json',
+          },
+        },
+      });
+      console.log(`  ✓ Registered webhook: ${webhook.topic}`);
+    } catch (error: any) {
+      // Webhook might already exist, check for that
+      if (error.response?.body?.errors?.includes('already exists')) {
+        console.log(`  ⚠ Webhook already exists: ${webhook.topic}`);
+      } else {
+        console.error(`  ✗ Failed to register webhook ${webhook.topic}:`, error.message);
+        throw error;
+      }
+    }
+  }
+}
 
 export default router;

@@ -1,5 +1,6 @@
 interface ClientConfig {
   storeDomain: string;
+  apiKey: string;
 }
 
 let cachedConfig: ClientConfig | null = null;

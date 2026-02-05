@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, Page, Card, Text, Link, BlockStack } from '@shopify/polaris';
+import { Provider as AppBridgeProvider } from '@shopify/app-bridge-react';
 import '@shopify/polaris/build/esm/styles.css';
 import './styles.css';
 import Dashboard from '../components/Dashboard';
@@ -9,38 +10,63 @@ import { getClientConfig } from './services/config';
 
 function App() {
   const [shop, setShop] = useState<string>('');
+  const [host, setHost] = useState<string>('');
+  const [apiKey, setApiKey] = useState<string>('');
   const [storeDomain, setStoreDomain] = useState<string>('myshopify.com');
 
   useEffect(() => {
-    // Load client config
+    // Load client config (includes API key)
     getClientConfig().then(config => {
       setStoreDomain(config.storeDomain);
+      setApiKey(config.apiKey);
     }).catch(err => {
       console.error('Failed to load config:', err);
-      // Keep default domain if config fails to load
     });
 
-    // Get shop from URL parameters or from Shopify context
+    // Get shop and host from URL parameters (required for embedded apps)
     const params = new URLSearchParams(window.location.search);
-    let shopParam = params.get('shop');
-
-    // If not in URL, try to extract from the pathname
-    // In Shopify admin, the URL is like: /store/bismuth-dev/apps/drop-leak-v2
-    if (!shopParam) {
-      const pathMatch = window.location.pathname.match(/\/store\/([^\/]+)\//);
-      if (pathMatch) {
-        shopParam = pathMatch[1] + '.' + storeDomain;
-      }
-    }
+    const shopParam = params.get('shop');
+    const hostParam = params.get('host');
 
     if (shopParam) {
       setShop(shopParam);
     }
-  }, [storeDomain]);
+    if (hostParam) {
+      setHost(hostParam);
+    }
+  }, []);
+
+  // Wait for config to load before rendering embedded app
+  if (!apiKey || !shop) {
+    return (
+      <AppProvider i18n={{}}>
+        <Page>
+          <Card>
+            <BlockStack gap="200">
+              <Text as="p">Loading...</Text>
+              {!shop && (
+                <Text as="p" tone="critical">
+                  Missing shop parameter. Please install the app from your Shopify admin.
+                </Text>
+              )}
+            </BlockStack>
+          </Card>
+        </Page>
+      </AppProvider>
+    );
+  }
+
+  // App Bridge configuration
+  const appBridgeConfig = {
+    apiKey: apiKey,
+    host: host,
+    forceRedirect: true,
+  };
 
   return (
-    <AppProvider i18n={{}}>
-      <BrowserRouter>
+    <AppBridgeProvider config={appBridgeConfig}>
+      <AppProvider i18n={{}}>
+        <BrowserRouter>
         <Routes>
           <Route
             path="/"
@@ -82,6 +108,7 @@ function App() {
         </Routes>
       </BrowserRouter>
     </AppProvider>
+    </AppBridgeProvider>
   );
 }
 
