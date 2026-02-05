@@ -158,7 +158,7 @@ Random Orders (40):
      First Order: 2026-02-02T22:00:15-05:00
      Last Order: 2026-02-02T23:45:23-05:00
 
-🔗 View orders: https://admin.shopify.com/store/bismuth-dev/orders
+🔗 View orders: https://admin.shopify.com/store/YOUR_STORE/orders
 
 ⏱️  Execution Time: 54.2 seconds
 ```

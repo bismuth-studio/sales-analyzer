@@ -2,6 +2,16 @@
 
 Quick reference for starting and stopping development sessions for the Drop Analyzer Shopify app.
 
+## Configuration
+
+Before starting, configure your store URL in `.env`:
+
+```bash
+SHOPIFY_STORE_URL=your-store.myshopify.com
+```
+
+This is required for all scripts and the main application. Replace `your-store` with your actual Shopify store name.
+
 ## Starting a Dev Session
 
 ### 1. Start the development server
@@ -36,7 +46,7 @@ Then restart the dev server (Ctrl+C and `npm run dev` again)
 ### 5. Reinstall/authenticate the app
 Visit this URL in your browser (replace with your ngrok URL):
 ```
-https://your-subdomain.ngrok-free.dev/api/shopify/auth?shop=bismuth-dev.myshopify.com
+https://your-subdomain.ngrok-free.dev/api/shopify/auth?shop=YOUR_STORE.myshopify.com
 ```
 
 This will:
@@ -69,7 +79,7 @@ If your ngrok tunnel URL is the same as last time:
 
 1. `npm run dev`
 2. `ngrok http 3000` (in another terminal)
-3. Visit `https://your-subdomain.ngrok-free.dev/api/shopify/auth?shop=bismuth-dev.myshopify.com`
+3. Visit `https://your-subdomain.ngrok-free.dev/api/shopify/auth?shop=YOUR_STORE.myshopify.com`
 
 Done! Your app should work immediately.
 
@@ -78,7 +88,7 @@ Done! Your app should work immediately.
 ### "Error loading orders" or "Not authenticated"
 Run the auth URL again:
 ```
-https://your-subdomain.ngrok-free.dev/api/shopify/auth?shop=bismuth-dev.myshopify.com
+https://your-subdomain.ngrok-free.dev/api/shopify/auth?shop=YOUR_STORE.myshopify.com
 ```
 
 ### ngrok says "endpoint already online"
@@ -111,9 +121,9 @@ Replace `[NGROK_URL]` with your current ngrok URL (e.g., `https://suzann-languis
 
 | Purpose | URL |
 |---------|-----|
-| Re-authenticate (after server restart) | `https://[NGROK_URL]/api/shopify/auth?shop=bismuth-dev.myshopify.com` |
-| Debug with console logs (outside iframe) | `http://localhost:3001?shop=bismuth-dev.myshopify.com` |
-| App in Shopify Admin | `https://admin.shopify.com/store/bismuth-dev/apps/drop-analyzer` |
+| Re-authenticate (after server restart) | `https://[NGROK_URL]/api/shopify/auth?shop=YOUR_STORE.myshopify.com` |
+| Debug with console logs (outside iframe) | `http://localhost:3001?shop=YOUR_STORE.myshopify.com` |
+| App in Shopify Admin | `https://admin.shopify.com/store/YOUR_STORE/apps/drop-analyzer` |
 | Express server | `http://localhost:3000` |
 | Vite dev server | `http://localhost:3001` |
 

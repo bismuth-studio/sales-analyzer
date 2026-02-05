@@ -2,8 +2,9 @@
 
 ## ⚡ 1-Minute Setup
 
-### Step 1: Add Access Token to .env
+### Step 1: Configure .env
 ```bash
+SHOPIFY_STORE_URL=your-store.myshopify.com
 SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 DISCOUNT_CODE=10%off
 ```

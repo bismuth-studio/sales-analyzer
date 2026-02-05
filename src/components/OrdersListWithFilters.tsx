@@ -21,6 +21,7 @@ import {
   getDatePreset,
   type DatePreset,
 } from './orders';
+import { getClientConfig } from '../client/services/config';
 
 interface Order {
   id: number;
@@ -150,6 +151,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [storeDomain, setStoreDomain] = useState<string>('myshopify.com');
 
   // Sync status state
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
@@ -1027,8 +1029,18 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     );
   };
 
+  // Load client config on mount
+  useEffect(() => {
+    getClientConfig().then(config => {
+      setStoreDomain(config.storeDomain);
+    }).catch(err => {
+      console.error('Failed to load config:', err);
+      // Keep default domain if config fails to load
+    });
+  }, []);
+
   const getOrderLink = (order: Order) => {
-    const shopName = shop.replace('.myshopify.com', '');
+    const shopName = shop.replace(`.${storeDomain}`, '');
     return `https://admin.shopify.com/store/${shopName}/orders/${order.id}`;
   };
 

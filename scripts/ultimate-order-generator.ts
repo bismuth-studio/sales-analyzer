@@ -1,11 +1,8 @@
-import { config } from 'dotenv';
 import '@shopify/shopify-api/adapters/node';
 import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
+import { getStoreUrl } from '../src/config/shopify';
 
-// Load environment variables
-config();
-
-const SHOP = 'bismuth-dev.myshopify.com';
+const SHOP = getStoreUrl();
 
 // ============================================================================
 // TYPE DEFINITIONS

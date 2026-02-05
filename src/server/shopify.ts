@@ -1,21 +1,21 @@
 import { Router } from 'express';
-import { config } from 'dotenv';
 import '@shopify/shopify-api/adapters/node';
 import { shopifyApi, Session, ApiVersion } from '@shopify/shopify-api';
 import { storeSession, loadSessionByShop } from './sessionStorage';
 import { startOrderSync } from './orderSyncService';
-
-// Load environment variables
-config();
+import { getShopifyConfig } from '../config/shopify';
 
 const router = Router();
 
+// Load configuration
+const config = getShopifyConfig();
+
 // Initialize Shopify API
 export const shopify = shopifyApi({
-  apiKey: process.env.SHOPIFY_API_KEY!,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET!,
-  scopes: process.env.SHOPIFY_SCOPES?.split(',') || ['read_orders'],
-  hostName: process.env.SHOPIFY_APP_URL?.replace(/https?:\/\//, '') || 'localhost:3000',
+  apiKey: config.apiKey,
+  apiSecretKey: config.apiSecret,
+  scopes: config.scopes,
+  hostName: config.appUrl?.replace(/https?:\/\//, '') || 'localhost:3000',
   hostScheme: 'https',
   apiVersion: ApiVersion.January26,
   isEmbeddedApp: true,

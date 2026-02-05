@@ -2,8 +2,15 @@ require('dotenv/config');
 const { shopifyApi } = require('@shopify/shopify-api');
 require('@shopify/shopify-api/adapters/node');
 
-const { SHOPIFY_ACCESS_TOKEN, SHOPIFY_API_KEY, SHOPIFY_API_SECRET } = process.env;
-const SHOP = 'bismuth-dev.myshopify.com';
+const { SHOPIFY_ACCESS_TOKEN, SHOPIFY_API_KEY, SHOPIFY_API_SECRET, SHOPIFY_STORE_URL } = process.env;
+
+if (!SHOPIFY_STORE_URL) {
+  console.error('❌ SHOPIFY_STORE_URL is not set in .env');
+  console.error('   Add: SHOPIFY_STORE_URL=your-store.myshopify.com');
+  process.exit(1);
+}
+
+const SHOP = SHOPIFY_STORE_URL;
 
 // Initialize Shopify
 const shopify = shopifyApi({

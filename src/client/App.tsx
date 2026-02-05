@@ -5,11 +5,21 @@ import '@shopify/polaris/build/esm/styles.css';
 import './styles.css';
 import Dashboard from '../components/Dashboard';
 import DropAnalysis from '../components/DropAnalysis';
+import { getClientConfig } from './services/config';
 
 function App() {
   const [shop, setShop] = useState<string>('');
+  const [storeDomain, setStoreDomain] = useState<string>('myshopify.com');
 
   useEffect(() => {
+    // Load client config
+    getClientConfig().then(config => {
+      setStoreDomain(config.storeDomain);
+    }).catch(err => {
+      console.error('Failed to load config:', err);
+      // Keep default domain if config fails to load
+    });
+
     // Get shop from URL parameters or from Shopify context
     const params = new URLSearchParams(window.location.search);
     let shopParam = params.get('shop');
@@ -19,14 +29,14 @@ function App() {
     if (!shopParam) {
       const pathMatch = window.location.pathname.match(/\/store\/([^\/]+)\//);
       if (pathMatch) {
-        shopParam = pathMatch[1] + '.myshopify.com';
+        shopParam = pathMatch[1] + '.' + storeDomain;
       }
     }
 
     if (shopParam) {
       setShop(shopParam);
     }
-  }, []);
+  }, [storeDomain]);
 
   return (
     <AppProvider i18n={{}}>

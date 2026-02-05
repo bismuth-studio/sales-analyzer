@@ -5,11 +5,12 @@
 
 import express from 'express';
 import { getSession } from '../src/server/shopify';
+import { getStoreUrl } from '../src/config/shopify';
 
 const app = express();
 
 app.get('/get-token', (req, res) => {
-  const shop = 'bismuth-dev.myshopify.com';
+  const shop = getStoreUrl();
   const session = getSession(shop);
 
   if (!session) {
