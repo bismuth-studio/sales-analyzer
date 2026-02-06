@@ -13,6 +13,7 @@ import {
   Tabs,
   Button,
 } from '@shopify/polaris';
+import { RefreshIcon } from '@shopify/polaris-icons';
 import { calculateDropPerformanceScore, type DropPerformanceScore } from '../utils/dropScore';
 import {
   SummaryMetricsCard,
@@ -1474,11 +1475,35 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
 
   // Customer metrics (memoized)
   const customerMetrics = useMemo(() => {
-    const uniqueCustomers = new Set(sortedOrders.map(order => order.email).filter(Boolean)).size;
-    const newCustomers = sortedOrders.filter(order =>
-      order.customer && order.customer.orders_count === 1).length;
-    const returningCustomers = sortedOrders.filter(order =>
-      order.customer && order.customer.orders_count > 1).length;
+    // Group orders by customer email to count unique customers
+    const customerMap = new Map<string, { email: string; orders_count: number }>();
+
+    sortedOrders.forEach(order => {
+      if (order.email && order.customer) {
+        // Use the first occurrence's orders_count (they should all be the same for a customer)
+        if (!customerMap.has(order.email)) {
+          customerMap.set(order.email, {
+            email: order.email,
+            orders_count: order.customer.orders_count,
+          });
+        }
+      }
+    });
+
+    const uniqueCustomers = customerMap.size;
+
+    // Count new customers (orders_count === 1) vs returning customers (orders_count > 1)
+    let newCustomers = 0;
+    let returningCustomers = 0;
+
+    customerMap.forEach(customer => {
+      if (customer.orders_count === 1) {
+        newCustomers++;
+      } else if (customer.orders_count > 1) {
+        returningCustomers++;
+      }
+    });
+
     return { uniqueCustomers, newCustomers, returningCustomers };
   }, [sortedOrders]);
 
@@ -1667,6 +1692,27 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     <BlockStack gap="400">
       {/* Sync Progress Banner (shown when sync is in progress) */}
       {syncStatus?.status === 'syncing' && <SyncProgressBanner />}
+
+      {/* Sync Orders Button (always visible when not syncing) */}
+      {syncStatus?.status !== 'syncing' && (
+        <Card>
+          <InlineStack align="space-between" blockAlign="center">
+            <InlineStack gap="200" blockAlign="center">
+              <Text as="h2" variant="headingMd">
+                Order Data
+              </Text>
+              {syncStatus?.lastSyncAt && (
+                <Text as="span" variant="bodySm" tone="subdued">
+                  Last synced: {new Date(syncStatus.lastSyncAt).toLocaleString()}
+                </Text>
+              )}
+            </InlineStack>
+            <Button onClick={triggerSync} icon={RefreshIcon}>
+              Sync Orders from Shopify
+            </Button>
+          </InlineStack>
+        </Card>
+      )}
 
       {/* Filters Section (only in explore mode) */}
       {isExploreMode && (

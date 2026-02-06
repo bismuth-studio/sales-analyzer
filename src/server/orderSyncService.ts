@@ -351,7 +351,7 @@ async function runOrderSync(
         customer: node.customer ? {
           id: parseInt(node.customer.legacyResourceId, 10),
           email: node.customer.email,
-          orders_count: node.customer.numberOfOrders || 0,
+          orders_count: parseInt(node.customer.numberOfOrders, 10) || 0,
         } : null,
         line_items: node.lineItems.edges.map((lineEdge: any) => {
           const lineNode = lineEdge.node;

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import '@shopify/shopify-api/adapters/node';
 import { shopifyApi, Session, ApiVersion } from '@shopify/shopify-api';
 import { storeSession, loadSessionByShop } from './sessionStorage';
@@ -98,8 +98,9 @@ async function registerWebhooks(session: Session): Promise<void> {
     { topic: 'shop/redact', address: `${webhookBaseUrl}/shop/redact` },
     // App Lifecycle
     { topic: 'app/uninstalled', address: `${webhookBaseUrl}/app/uninstalled` },
-    // Optional: Real-time order sync
-    // { topic: 'orders/create', address: `${webhookBaseUrl}/orders/create` },
+    // Real-time order sync
+    { topic: 'orders/create', address: `${webhookBaseUrl}/orders/create` },
+    { topic: 'orders/updated', address: `${webhookBaseUrl}/orders/updated` },
   ];
 
   for (const webhook of webhooks) {
@@ -126,5 +127,69 @@ async function registerWebhooks(session: Session): Promise<void> {
     }
   }
 }
+
+/**
+ * Manual webhook registration endpoint
+ * Allows re-registering webhooks without going through OAuth
+ */
+router.post('/webhooks/register', async (req: Request, res: Response) => {
+  try {
+    const shop = req.query.shop as string;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    const session = getSession(shop);
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated. Please install the app first.' });
+    }
+
+    console.log(`\n📝 Manually registering webhooks for ${shop}...`);
+    await registerWebhooks(session);
+    console.log(`✅ Webhook registration completed for ${shop}\n`);
+
+    res.json({ success: true, message: 'Webhooks registered successfully' });
+  } catch (error: any) {
+    console.error('Failed to register webhooks:', error);
+    res.status(500).json({ error: 'Failed to register webhooks', message: error.message });
+  }
+});
+
+/**
+ * Check webhook status
+ * Lists all registered webhooks for the shop
+ */
+router.get('/webhooks/status', async (req: Request, res: Response) => {
+  try {
+    const shop = req.query.shop as string;
+
+    if (!shop) {
+      return res.status(400).json({ error: 'Missing shop parameter' });
+    }
+
+    const session = getSession(shop);
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated. Please install the app first.' });
+    }
+
+    const client = new shopify.clients.Rest({ session });
+    const webhooksResponse = await client.get({ path: 'webhooks' });
+    const webhooks = (webhooksResponse.body as any).webhooks || [];
+
+    res.json({
+      success: true,
+      webhooks: webhooks.map((w: any) => ({
+        id: w.id,
+        topic: w.topic,
+        address: w.address,
+        created_at: w.created_at,
+      })),
+    });
+  } catch (error: any) {
+    console.error('Failed to get webhook status:', error);
+    res.status(500).json({ error: 'Failed to get webhook status', message: error.message });
+  }
+});
 
 export default router;

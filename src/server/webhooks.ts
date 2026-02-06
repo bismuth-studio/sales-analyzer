@@ -192,10 +192,10 @@ router.post('/app/uninstalled', verifyWebhook, async (req: Request, res: Respons
 });
 
 /**
- * Orders Created Webhook (Optional - for real-time order sync)
+ * Orders Created Webhook (Real-time order sync)
  *
  * Triggered when a new order is created in Shopify.
- * You can use this for real-time order syncing instead of polling.
+ * Automatically adds the order to the local cache.
  */
 router.post('/orders/create', verifyWebhook, async (req: Request, res: Response) => {
   const shop = getWebhookShop(req);
@@ -205,12 +205,117 @@ router.post('/orders/create', verifyWebhook, async (req: Request, res: Response)
     shop,
     order_id: order.id,
     order_name: order.name,
+    customer_email: order.email,
   });
 
-  // TODO: Implement real-time order sync
-  // You can use upsertOrders() to add this single order to the cache
+  try {
+    // Transform webhook payload to CachedOrder format
+    const { upsertOrders } = require('./sessionStorage');
 
-  res.status(200).send('Order webhook received');
+    const cachedOrder = {
+      id: order.id,
+      name: order.name,
+      email: order.email || order.contact_email || '',
+      created_at: order.created_at,
+      total_price: order.total_price || '0',
+      subtotal_price: order.subtotal_price || '0',
+      total_discounts: order.total_discounts || '0',
+      total_line_items_price: order.total_line_items_price || order.subtotal_price || '0',
+      currency: order.currency || 'USD',
+      financial_status: order.financial_status || 'pending',
+      tags: order.tags || '',
+      customer: order.customer ? {
+        id: order.customer.id,
+        email: order.customer.email,
+        orders_count: order.customer.orders_count || 1,
+      } : null,
+      line_items: (order.line_items || []).map((item: any) => ({
+        id: item.id,
+        title: item.title || item.name,
+        quantity: item.quantity,
+        price: item.price,
+        variant_title: item.variant_title,
+        sku: item.sku,
+        product_id: item.product_id,
+        variant_id: item.variant_id,
+        vendor: item.vendor,
+        product_type: item.product_type,
+      })),
+      refunds: order.refunds || [],
+    };
+
+    // Store the order in the cache
+    upsertOrders(shop!, [cachedOrder]);
+
+    console.log(`✅ Order ${order.name} synced to cache for ${shop}`);
+    res.status(200).send('Order synced successfully');
+  } catch (error) {
+    console.error('Failed to sync order from webhook:', error);
+    res.status(500).send('Failed to sync order');
+  }
+});
+
+/**
+ * Orders Updated Webhook (Real-time order sync)
+ *
+ * Triggered when an order is updated in Shopify.
+ * Updates the order in the local cache.
+ */
+router.post('/orders/updated', verifyWebhook, async (req: Request, res: Response) => {
+  const shop = getWebhookShop(req);
+  const order = req.body;
+
+  console.log('📝 Order updated webhook received', {
+    shop,
+    order_id: order.id,
+    order_name: order.name,
+  });
+
+  try {
+    // Transform webhook payload to CachedOrder format
+    const { upsertOrders } = require('./sessionStorage');
+
+    const cachedOrder = {
+      id: order.id,
+      name: order.name,
+      email: order.email || order.contact_email || '',
+      created_at: order.created_at,
+      total_price: order.total_price || '0',
+      subtotal_price: order.subtotal_price || '0',
+      total_discounts: order.total_discounts || '0',
+      total_line_items_price: order.total_line_items_price || order.subtotal_price || '0',
+      currency: order.currency || 'USD',
+      financial_status: order.financial_status || 'pending',
+      tags: order.tags || '',
+      customer: order.customer ? {
+        id: order.customer.id,
+        email: order.customer.email,
+        orders_count: order.customer.orders_count || 1,
+      } : null,
+      line_items: (order.line_items || []).map((item: any) => ({
+        id: item.id,
+        title: item.title || item.name,
+        quantity: item.quantity,
+        price: item.price,
+        variant_title: item.variant_title,
+        sku: item.sku,
+        product_id: item.product_id,
+        variant_id: item.variant_id,
+        vendor: item.vendor,
+        product_type: item.product_type,
+      })),
+      refunds: order.refunds || [],
+    };
+
+    // Update the order in the cache
+    upsertOrders(shop!, [cachedOrder]);
+
+    console.log(`✅ Order ${order.name} updated in cache for ${shop}`);
+    res.status(200).send('Order updated successfully');
+  } catch (error) {
+    console.error('Failed to update order from webhook:', error);
+    res.status(500).send('Failed to update order');
+  }
 });
 
 export default router;
