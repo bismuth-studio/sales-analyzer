@@ -342,6 +342,7 @@ async function runOrderSync(
         created_at: node.createdAt,
         total_price: node.totalPriceSet.shopMoney.amount,
         subtotal_price: node.subtotalPriceSet.shopMoney.amount,
+        total_line_items_price: node.subtotalPriceSet.shopMoney.amount,
         total_tax: node.totalTaxSet?.shopMoney?.amount || '0',
         total_discounts: node.totalDiscountsSet?.shopMoney?.amount || '0',
         currency: node.currencyCode,

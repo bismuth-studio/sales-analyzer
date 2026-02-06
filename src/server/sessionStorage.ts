@@ -777,10 +777,33 @@ export function resetStuckSyncs(): number {
   }
 }
 
+/**
+ * Migration: Fix missing total_line_items_price values
+ * Updates orders where total_line_items_price is NULL by setting it to subtotal_price
+ */
+export function migrateOrderTotalLineItemsPrice(): number {
+  try {
+    const stmt = db.prepare(`
+      UPDATE orders
+      SET total_line_items_price = subtotal_price
+      WHERE total_line_items_price IS NULL OR total_line_items_price = ''
+    `);
+    const result = stmt.run();
+    if (result.changes > 0) {
+      console.log(`✅ Migrated ${result.changes} orders with missing total_line_items_price`);
+    }
+    return result.changes;
+  } catch (error) {
+    console.error('Failed to migrate total_line_items_price:', error);
+    return 0;
+  }
+}
+
 // Run cleanup on startup
 cleanupExpiredSessions();
 cleanupExpiredProductCache();
 resetStuckSyncs();
+migrateOrderTotalLineItemsPrice();
 
 // Schedule periodic cleanup (every hour)
 setInterval(() => {
