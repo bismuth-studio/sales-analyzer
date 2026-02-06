@@ -63,7 +63,7 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
 
   const fetchDrop = async () => {
     try {
-      const response = await fetch(`/api/drops/${dropId}`);
+      const response = await fetch(`/api/drops/${dropId}?shop=${encodeURIComponent(shop)}`);
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error('Drop not found');

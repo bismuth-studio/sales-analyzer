@@ -171,7 +171,7 @@ function Dashboard({ shop }: DashboardProps) {
 
   const handleDeleteDrop = async (dropId: string) => {
     try {
-      const response = await fetch(`/api/drops/${dropId}`, {
+      const response = await fetch(`/api/drops/${dropId}?shop=${encodeURIComponent(shop)}`, {
         method: 'DELETE',
       });
       if (!response.ok) {

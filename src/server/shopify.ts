@@ -15,7 +15,12 @@ export const shopify = shopifyApi({
   apiKey: config.apiKey,
   apiSecretKey: config.apiSecret,
   scopes: config.scopes,
-  hostName: config.appUrl?.replace(/https?:\/\//, '') || 'localhost:3000',
+  hostName: (() => {
+    if (!config.appUrl) {
+      throw new Error('SHOPIFY_APP_URL is required. Set it in your environment variables.');
+    }
+    return config.appUrl.replace(/https?:\/\//, '');
+  })(),
   hostScheme: 'https',
   apiVersion: ApiVersion.January26,
   isEmbeddedApp: true,

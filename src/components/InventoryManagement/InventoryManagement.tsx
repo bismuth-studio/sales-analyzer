@@ -154,6 +154,7 @@ function InventoryManagement({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          shop,
           inventory: updatedInventory,
           source: 'manual',
         }),
@@ -213,6 +214,7 @@ function InventoryManagement({
       const response = await fetch(`/api/drops/${dropId}/inventory/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop }),
       });
 
       if (!response.ok) {
@@ -244,6 +246,7 @@ function InventoryManagement({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          shop,
           inventory: updatedInventory,
           source: 'csv',
         }),

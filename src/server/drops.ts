@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import {
   getDropsByShop,
   getDropById,
@@ -11,6 +11,40 @@ import {
 import { getSession, shopify } from './shopify';
 
 const router = Router();
+
+// Extend Request type to include validatedShop
+interface AuthenticatedRequest extends Request {
+  validatedShop?: string;
+}
+
+/**
+ * Middleware to verify shop authentication
+ * Validates shop format and checks for active session
+ */
+function requireShopAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const shop = (req.query.shop || req.body?.shop) as string;
+
+  if (!shop) {
+    res.status(400).json({ error: 'Missing shop parameter' });
+    return;
+  }
+
+  // Validate shop format (must be *.myshopify.com)
+  if (!shop.match(/^[\w-]+\.myshopify\.com$/)) {
+    res.status(400).json({ error: 'Invalid shop domain format' });
+    return;
+  }
+
+  const session = getSession(shop);
+  if (!session) {
+    res.status(401).json({ error: 'Not authenticated for this shop' });
+    return;
+  }
+
+  // Attach validated shop to request for use in handlers
+  req.validatedShop = shop;
+  next();
+}
 
 // Helper function to fetch inventory snapshot from Shopify
 async function fetchInventorySnapshot(shop: string): Promise<{ [variantId: string]: number } | null> {
@@ -83,13 +117,8 @@ async function fetchInventorySnapshot(shop: string): Promise<{ [variantId: strin
 }
 
 // GET /api/drops - List all drops for a shop
-router.get('/', async (req: Request, res: Response) => {
-  const shop = req.query.shop as string;
-
-  if (!shop) {
-    res.status(400).json({ error: 'Missing shop parameter' });
-    return;
-  }
+router.get('/', requireShopAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const shop = req.validatedShop!;
 
   try {
     const drops = await getDropsByShop(shop);
@@ -101,13 +130,19 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /api/drops/:id - Get a single drop
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', requireShopAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
+  const shop = req.validatedShop!;
 
   try {
     const drop = await getDropById(id);
     if (!drop) {
       res.status(404).json({ error: 'Drop not found' });
+      return;
+    }
+    // Verify drop belongs to the authenticated shop
+    if (drop.shop !== shop) {
+      res.status(403).json({ error: 'Access denied to this drop' });
       return;
     }
     res.json({ drop });
@@ -118,11 +153,12 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/drops - Create a new drop
-router.post('/', async (req: Request, res: Response) => {
-  const { shop, title, start_time, end_time, collection_id, collection_title } = req.body;
+router.post('/', requireShopAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const shop = req.validatedShop!;
+  const { title, start_time, end_time, collection_id, collection_title } = req.body;
 
-  if (!shop || !title || !start_time || !end_time) {
-    res.status(400).json({ error: 'Missing required fields: shop, title, start_time, end_time' });
+  if (!title || !start_time || !end_time) {
+    res.status(400).json({ error: 'Missing required fields: title, start_time, end_time' });
     return;
   }
 
@@ -152,11 +188,23 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PUT /api/drops/:id - Update a drop
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', requireShopAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
+  const shop = req.validatedShop!;
   const { title, start_time, end_time, collection_id, collection_title } = req.body;
 
   try {
+    // First verify the drop belongs to this shop
+    const existingDrop = await getDropById(id);
+    if (!existingDrop) {
+      res.status(404).json({ error: 'Drop not found' });
+      return;
+    }
+    if (existingDrop.shop !== shop) {
+      res.status(403).json({ error: 'Access denied to this drop' });
+      return;
+    }
+
     const drop = await updateDrop(id, {
       title,
       start_time,
@@ -164,11 +212,6 @@ router.put('/:id', async (req: Request, res: Response) => {
       collection_id,
       collection_title,
     });
-
-    if (!drop) {
-      res.status(404).json({ error: 'Drop not found' });
-      return;
-    }
 
     res.json({ drop });
   } catch (error) {
@@ -178,15 +221,23 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/drops/:id - Delete a drop
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireShopAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
+  const shop = req.validatedShop!;
 
   try {
-    const deleted = await deleteDrop(id);
-    if (!deleted) {
+    // First verify the drop belongs to this shop
+    const existingDrop = await getDropById(id);
+    if (!existingDrop) {
       res.status(404).json({ error: 'Drop not found' });
       return;
     }
+    if (existingDrop.shop !== shop) {
+      res.status(403).json({ error: 'Access denied to this drop' });
+      return;
+    }
+
+    await deleteDrop(id);
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting drop:', error);
@@ -195,8 +246,9 @@ router.delete('/:id', async (req: Request, res: Response) => {
 });
 
 // PUT /api/drops/:id/inventory - Update inventory snapshot (manual edit or CSV import)
-router.put('/:id/inventory', async (req: Request, res: Response) => {
+router.put('/:id/inventory', requireShopAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
+  const shop = req.validatedShop!;
   const { inventory, source } = req.body;
   // inventory: { [variantId: string]: number }
   // source: 'manual' | 'csv'
@@ -213,6 +265,10 @@ router.put('/:id/inventory', async (req: Request, res: Response) => {
     const drop = await getDropById(id);
     if (!drop) {
       res.status(404).json({ error: 'Drop not found' });
+      return;
+    }
+    if (drop.shop !== shop) {
+      res.status(403).json({ error: 'Access denied to this drop' });
       return;
     }
 
@@ -234,19 +290,18 @@ router.put('/:id/inventory', async (req: Request, res: Response) => {
 });
 
 // POST /api/drops/:id/inventory/snapshot - Take fresh snapshot from Shopify
-router.post('/:id/inventory/snapshot', async (req: Request, res: Response) => {
+router.post('/:id/inventory/snapshot', requireShopAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  const { shop } = req.body;
-
-  if (!shop) {
-    res.status(400).json({ error: 'Missing shop parameter' });
-    return;
-  }
+  const shop = req.validatedShop!;
 
   try {
     const drop = await getDropById(id);
     if (!drop) {
       res.status(404).json({ error: 'Drop not found' });
+      return;
+    }
+    if (drop.shop !== shop) {
+      res.status(403).json({ error: 'Access denied to this drop' });
       return;
     }
 
@@ -281,13 +336,18 @@ router.post('/:id/inventory/snapshot', async (req: Request, res: Response) => {
 });
 
 // POST /api/drops/:id/inventory/reset - Reset to original snapshot
-router.post('/:id/inventory/reset', async (req: Request, res: Response) => {
+router.post('/:id/inventory/reset', requireShopAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
+  const shop = req.validatedShop!;
 
   try {
     const drop = await getDropById(id);
     if (!drop) {
       res.status(404).json({ error: 'Drop not found' });
+      return;
+    }
+    if (drop.shop !== shop) {
+      res.status(403).json({ error: 'Access denied to this drop' });
       return;
     }
 
