@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Page,
@@ -11,6 +11,8 @@ import {
   InlineGrid,
   Badge,
   Button,
+  SkeletonBodyText,
+  SkeletonDisplayText,
 } from '@shopify/polaris';
 import { EditIcon } from '@shopify/polaris-icons';
 import OrdersListWithFilters from './OrdersListWithFilters';
@@ -25,6 +27,7 @@ import {
   type OrderAnalysisData,
 } from './orders';
 import type { DropPerformanceScore } from '../utils/dropScore';
+import { useOrderAnalysis } from '../hooks/useOrderAnalysis';
 
 interface Drop {
   id: string;
@@ -55,15 +58,14 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [performanceScore, setPerformanceScore] = useState<DropPerformanceScore | null>(null);
 
-  // State to receive data from OrdersListWithFilters
-  const [orderData, setOrderData] = useState<OrderAnalysisData | null>(null);
+  // Use custom hook for order analysis data
+  const { orderData, isLoading: isDataLoading, handleDataCalculated } = useOrderAnalysis();
+
+  // Reference to OrdersListWithFilters to access its methods
+  const ordersListRef = useRef<{ triggerSync: () => void } | null>(null);
 
   const handleScoreCalculated = useCallback((score: DropPerformanceScore | null) => {
     setPerformanceScore(score);
-  }, []);
-
-  const handleDataCalculated = useCallback((data: OrderAnalysisData) => {
-    setOrderData(data);
   }, []);
 
   useEffect(() => {
@@ -184,6 +186,16 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
   const topProducts = sortedByRevenue.slice(0, 5);
   const worstProducts = sortedByRevenue.slice(-5).reverse();
 
+  // Loading skeleton for cards
+  const LoadingSkeleton = () => (
+    <Card>
+      <BlockStack gap="300">
+        <SkeletonDisplayText size="small" />
+        <SkeletonBodyText lines={3} />
+      </BlockStack>
+    </Card>
+  );
+
   return (
     <Page
       title={drop.title}
@@ -195,14 +207,15 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
       <div style={{ paddingLeft: '5%', paddingRight: '5%' }}>
         <BlockStack gap="400">
           {/* 1. Order Data Section */}
-          <OrderDataCard
-            lastSyncAt={syncStatus?.lastSyncAt || null}
-            onSync={() => {
-              // Sync will be handled by OrdersListWithFilters
-              console.log('Sync triggered from OrderDataCard');
-            }}
-            isSyncing={syncStatus?.status === 'syncing'}
-          />
+          {isDataLoading ? (
+            <LoadingSkeleton />
+          ) : (
+            <OrderDataCard
+              lastSyncAt={syncStatus?.lastSyncAt || null}
+              onSync={() => ordersListRef.current?.triggerSync()}
+              isSyncing={syncStatus?.status === 'syncing'}
+            />
+          )}
 
           {/* 2. Drop Performance Score Section */}
           <PerformanceScoreCard score={performanceScore} />
@@ -210,13 +223,17 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
           {/* 3. Drop Summary and Drop Details - Two Column Layout */}
           <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
             {/* Drop Summary */}
-            <SummaryMetricsCard
-              salesMetrics={salesMetrics}
-              customerMetrics={customerMetrics}
-              topProducts={topProductsForSummary}
-              productImages={productImages}
-              formatCurrency={formatCurrency}
-            />
+            {isDataLoading ? (
+              <LoadingSkeleton />
+            ) : (
+              <SummaryMetricsCard
+                salesMetrics={salesMetrics}
+                customerMetrics={customerMetrics}
+                topProducts={topProductsForSummary}
+                productImages={productImages}
+                formatCurrency={formatCurrency}
+              />
+            )}
 
             {/* Drop Details */}
             <Card>
@@ -262,28 +279,41 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
 
           {/* 4. Top Performing and Worst Performing Products - Two Column Layout */}
           <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
-            <PerformingProductsCard
-              title="Top Performing products"
-              subtitle="Best selling products during this drop"
-              products={topProducts}
-              formatCurrency={formatCurrency}
-              isTop={true}
-            />
-            <PerformingProductsCard
-              title="Worst Performing products"
-              subtitle="Lowest selling products during this drop"
-              products={worstProducts}
-              formatCurrency={formatCurrency}
-              isTop={false}
-            />
+            {isDataLoading ? (
+              <>
+                <LoadingSkeleton />
+                <LoadingSkeleton />
+              </>
+            ) : (
+              <>
+                <PerformingProductsCard
+                  title="Top Performing products"
+                  subtitle="Best selling products during this drop"
+                  products={topProducts}
+                  formatCurrency={formatCurrency}
+                  isTop={true}
+                />
+                <PerformingProductsCard
+                  title="Worst Performing products"
+                  subtitle="Lowest selling products during this drop"
+                  products={worstProducts}
+                  formatCurrency={formatCurrency}
+                  isTop={false}
+                />
+              </>
+            )}
           </InlineGrid>
 
           {/* 5. Sold Out Variants Section */}
-          <SoldOutVariantsSection
-            soldOutVariants={soldOutVariants}
-            dropStartTime={drop.start_time}
-            formatCurrency={formatCurrency}
-          />
+          {isDataLoading ? (
+            <LoadingSkeleton />
+          ) : (
+            <SoldOutVariantsSection
+              soldOutVariants={soldOutVariants}
+              dropStartTime={drop.start_time}
+              formatCurrency={formatCurrency}
+            />
+          )}
 
           {/* 6. Inventory Management Section */}
           <InventoryManagement
@@ -305,6 +335,9 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
             inventorySnapshot={drop.inventory_snapshot}
             onScoreCalculated={handleScoreCalculated}
             onDataCalculated={handleDataCalculated}
+            onMethodsReady={(methods) => {
+              ordersListRef.current = methods;
+            }}
             hideSections={{
               orderData: true,
               summaryMetrics: true,

@@ -125,6 +125,8 @@ interface OrdersListProps {
   onScoreCalculated?: (score: DropPerformanceScore | null) => void;
   // Data callbacks to pass data to parent
   onDataCalculated?: (data: OrderAnalysisData) => void;
+  // Expose methods to parent
+  onMethodsReady?: (methods: { triggerSync: () => void }) => void;
   // Control which sections to render
   hideSections?: {
     orderData?: boolean;
@@ -143,6 +145,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
   inventorySnapshot,
   onScoreCalculated,
   onDataCalculated,
+  onMethodsReady,
   hideSections = {},
 }) => {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -887,7 +890,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
     }
   };
 
-  const triggerSync = async () => {
+  const triggerSync = useCallback(async () => {
     try {
       const response = await fetch(`/api/orders/sync/start?shop=${encodeURIComponent(shop)}`, {
         method: 'POST',
@@ -910,7 +913,14 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
     } catch (err) {
       console.error('Error triggering sync:', err);
     }
-  };
+  }, [shop]);
+
+  // Expose methods to parent component
+  useEffect(() => {
+    if (onMethodsReady) {
+      onMethodsReady({ triggerSync });
+    }
+  }, [onMethodsReady, triggerSync]);
 
   const connectToSyncProgress = () => {
     // Close existing connection if any
