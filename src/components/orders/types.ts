@@ -131,3 +131,25 @@ export interface TopProduct {
   productId: number;
   unitsSold: number;
 }
+
+export interface SyncStatus {
+  status: 'idle' | 'syncing' | 'completed' | 'error';
+  syncedOrders: number;
+  totalOrders: number | null;
+  lastSyncAt: string | null;
+  syncRequired: boolean;
+}
+
+/**
+ * Combined data structure passed from OrdersListWithFilters to parent components
+ */
+export interface OrderAnalysisData {
+  salesMetrics: SalesMetrics;
+  customerMetrics: CustomerMetrics;
+  topProducts: TopProduct[];
+  productSummary: ProductSummary[];
+  soldOutVariants: ProductSummary[];
+  productImages: Record<string, string>;
+  syncStatus: SyncStatus | null;
+  formatCurrency: (amount: number) => string;
+}

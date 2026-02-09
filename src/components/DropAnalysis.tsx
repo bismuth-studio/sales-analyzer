@@ -8,6 +8,7 @@ import {
   Spinner,
   Banner,
   InlineStack,
+  InlineGrid,
   Badge,
   Button,
 } from '@shopify/polaris';
@@ -16,6 +17,13 @@ import OrdersListWithFilters from './OrdersListWithFilters';
 import DropModal from './DropModal';
 import InventoryManagement from './InventoryManagement/InventoryManagement';
 import PerformanceScoreCard from './PerformanceScoreCard';
+import {
+  OrderDataCard,
+  SummaryMetricsCard,
+  PerformingProductsCard,
+  SoldOutVariantsSection,
+  type OrderAnalysisData,
+} from './orders';
 import type { DropPerformanceScore } from '../utils/dropScore';
 
 interface Drop {
@@ -47,8 +55,15 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [performanceScore, setPerformanceScore] = useState<DropPerformanceScore | null>(null);
 
+  // State to receive data from OrdersListWithFilters
+  const [orderData, setOrderData] = useState<OrderAnalysisData | null>(null);
+
   const handleScoreCalculated = useCallback((score: DropPerformanceScore | null) => {
     setPerformanceScore(score);
+  }, []);
+
+  const handleDataCalculated = useCallback((data: OrderAnalysisData) => {
+    setOrderData(data);
   }, []);
 
   useEffect(() => {
@@ -141,6 +156,34 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
 
   const status = getDropStatus(drop);
 
+  // Extract data from orderData or use defaults
+  const formatCurrency = orderData?.formatCurrency || ((amount: number) => `$${amount.toFixed(2)}`);
+  const salesMetrics = orderData?.salesMetrics || {
+    totalOrders: 0,
+    totalItemsSold: 0,
+    grossSales: 0,
+    totalDiscounts: 0,
+    totalRefunds: 0,
+    refundedOrdersCount: 0,
+    netSales: 0,
+    avgOrderValue: 0,
+  };
+  const customerMetrics = orderData?.customerMetrics || {
+    uniqueCustomers: 0,
+    newCustomers: 0,
+    returningCustomers: 0,
+  };
+  const topProductsForSummary = orderData?.topProducts || [];
+  const productImages = orderData?.productImages || {};
+  const soldOutVariants = orderData?.soldOutVariants || [];
+  const syncStatus = orderData?.syncStatus;
+
+  // Calculate top and worst performing products from productSummary
+  const productSummary = orderData?.productSummary || [];
+  const sortedByRevenue = [...productSummary].sort((a, b) => b.totalRevenue - a.totalRevenue);
+  const topProducts = sortedByRevenue.slice(0, 5);
+  const worstProducts = sortedByRevenue.slice(-5).reverse();
+
   return (
     <Page
       title={drop.title}
@@ -151,46 +194,98 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
     >
       <div style={{ paddingLeft: '5%', paddingRight: '5%' }}>
         <BlockStack gap="400">
-          <Card>
-            <BlockStack gap="300">
-              <InlineStack align="space-between">
-                <Text as="h2" variant="headingLg">Drop Details</Text>
-                <Button icon={EditIcon} onClick={() => setEditModalOpen(true)}>
-                  Edit Drop
-                </Button>
-              </InlineStack>
-              <Text as="p" variant="bodySm" tone="subdued">
-                Basic information about your product drop including timing and collection
-              </Text>
-              <InlineStack gap="800" align="start" wrap>
-                <BlockStack gap="100">
-                  <Text as="span" variant="bodySm" tone="subdued">Title</Text>
-                  <Text as="span" variant="bodyMd" fontWeight="semibold">{drop.title}</Text>
-                </BlockStack>
-                <BlockStack gap="100">
-                  <Text as="span" variant="bodySm" tone="subdued">Start Time</Text>
-                  <Text as="span" variant="bodyMd">{formatDateTime(drop.start_time)}</Text>
-                </BlockStack>
-                <BlockStack gap="100">
-                  <Text as="span" variant="bodySm" tone="subdued">End Time</Text>
-                  <Text as="span" variant="bodyMd">{formatDateTime(drop.end_time)}</Text>
-                </BlockStack>
-                <BlockStack gap="100">
-                  <Text as="span" variant="bodySm" tone="subdued">Collection</Text>
-                  <Text as="span" variant="bodyMd">{drop.collection_title || 'All products'}</Text>
-                </BlockStack>
-                <BlockStack gap="100">
-                  <Text as="span" variant="bodySm" tone="subdued">Status</Text>
-                  <Badge tone={status.status}>{status.label}</Badge>
-                </BlockStack>
-                <BlockStack gap="100">
-                  <Text as="span" variant="bodySm" tone="subdued">Created</Text>
-                  <Text as="span" variant="bodyMd">{formatDateTime(drop.created_at)}</Text>
-                </BlockStack>
-              </InlineStack>
-            </BlockStack>
-          </Card>
+          {/* 1. Order Data Section */}
+          <OrderDataCard
+            lastSyncAt={syncStatus?.lastSyncAt || null}
+            onSync={() => {
+              // Sync will be handled by OrdersListWithFilters
+              console.log('Sync triggered from OrderDataCard');
+            }}
+            isSyncing={syncStatus?.status === 'syncing'}
+          />
 
+          {/* 2. Drop Performance Score Section */}
+          <PerformanceScoreCard score={performanceScore} />
+
+          {/* 3. Drop Summary and Drop Details - Two Column Layout */}
+          <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
+            {/* Drop Summary */}
+            <SummaryMetricsCard
+              salesMetrics={salesMetrics}
+              customerMetrics={customerMetrics}
+              topProducts={topProductsForSummary}
+              productImages={productImages}
+              formatCurrency={formatCurrency}
+            />
+
+            {/* Drop Details */}
+            <Card>
+              <BlockStack gap="300">
+                <InlineStack align="space-between">
+                  <Text as="h2" variant="headingLg">Drop details</Text>
+                  <Button icon={EditIcon} onClick={() => setEditModalOpen(true)}>
+                    Edit Drop
+                  </Button>
+                </InlineStack>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Basic information about your product drop
+                </Text>
+                <InlineStack gap="800" align="start" wrap>
+                  <BlockStack gap="100">
+                    <Text as="span" variant="bodySm" tone="subdued">Title</Text>
+                    <Text as="span" variant="bodyMd" fontWeight="semibold">{drop.title}</Text>
+                  </BlockStack>
+                  <BlockStack gap="100">
+                    <Text as="span" variant="bodySm" tone="subdued">Start Time</Text>
+                    <Text as="span" variant="bodyMd">{formatDateTime(drop.start_time)}</Text>
+                  </BlockStack>
+                  <BlockStack gap="100">
+                    <Text as="span" variant="bodySm" tone="subdued">End Time</Text>
+                    <Text as="span" variant="bodyMd">{formatDateTime(drop.end_time)}</Text>
+                  </BlockStack>
+                  <BlockStack gap="100">
+                    <Text as="span" variant="bodySm" tone="subdued">Collection</Text>
+                    <Text as="span" variant="bodyMd">{drop.collection_title || 'All products'}</Text>
+                  </BlockStack>
+                  <BlockStack gap="100">
+                    <Text as="span" variant="bodySm" tone="subdued">Status</Text>
+                    <Badge tone={status.status}>{status.label}</Badge>
+                  </BlockStack>
+                  <BlockStack gap="100">
+                    <Text as="span" variant="bodySm" tone="subdued">Created</Text>
+                    <Text as="span" variant="bodyMd">{formatDateTime(drop.created_at)}</Text>
+                  </BlockStack>
+                </InlineStack>
+              </BlockStack>
+            </Card>
+          </InlineGrid>
+
+          {/* 4. Top Performing and Worst Performing Products - Two Column Layout */}
+          <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
+            <PerformingProductsCard
+              title="Top Performing products"
+              subtitle="Best selling products during this drop"
+              products={topProducts}
+              formatCurrency={formatCurrency}
+              isTop={true}
+            />
+            <PerformingProductsCard
+              title="Worst Performing products"
+              subtitle="Lowest selling products during this drop"
+              products={worstProducts}
+              formatCurrency={formatCurrency}
+              isTop={false}
+            />
+          </InlineGrid>
+
+          {/* 5. Sold Out Variants Section */}
+          <SoldOutVariantsSection
+            soldOutVariants={soldOutVariants}
+            dropStartTime={drop.start_time}
+            formatCurrency={formatCurrency}
+          />
+
+          {/* 6. Inventory Management Section */}
           <InventoryManagement
             dropId={drop.id}
             shop={shop}
@@ -201,14 +296,22 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
             onInventoryUpdated={handleDropSaved}
           />
 
-          <PerformanceScoreCard score={performanceScore} />
-
+          {/* 7-8. Product Sales Breakdown and Orders Section */}
+          {/* OrdersListWithFilters now only renders the sections we want */}
           <OrdersListWithFilters
             shop={shop}
             dropStartTime={drop.start_time}
             dropEndTime={drop.end_time}
             inventorySnapshot={drop.inventory_snapshot}
             onScoreCalculated={handleScoreCalculated}
+            onDataCalculated={handleDataCalculated}
+            hideSections={{
+              orderData: true,
+              summaryMetrics: true,
+              soldOutVariants: true,
+              productSalesBreakdown: false,
+              ordersTable: false,
+            }}
           />
         </BlockStack>
       </div>

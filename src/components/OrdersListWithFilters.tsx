@@ -21,6 +21,9 @@ import {
   FilterSection,
   getDatePreset,
   type DatePreset,
+  type OrderAnalysisData,
+  type SyncStatus,
+  type ProductSummary,
 } from './orders';
 import { getClientConfig } from '../client/services/config';
 
@@ -60,24 +63,6 @@ interface Order {
     vendor: string | null;
     product_type: string | null;
   }>;
-}
-
-interface ProductSummary {
-  productId: number;
-  variantId: number;
-  productName: string;
-  variantName: string;
-  color: string;
-  size: string;
-  sku: string;
-  unitsSold: number;
-  remainingInventory: number;
-  totalRevenue: number;
-  currency: string;
-  sellThroughRate: number;
-  revenuePercentage: number;
-  imageUrl?: string;
-  soldOutAt?: string; // Timestamp when variant sold out (reached 50 units)
 }
 
 interface AggregatedProductSummary {
@@ -131,14 +116,6 @@ interface CategorySummary {
   revenuePercentage: number;
 }
 
-interface SyncStatus {
-  status: 'idle' | 'syncing' | 'completed' | 'error';
-  syncedOrders: number;
-  totalOrders: number | null;
-  lastSyncAt: string | null;
-  syncRequired: boolean;
-}
-
 interface OrdersListProps {
   shop: string;
   dropStartTime?: string;
@@ -146,9 +123,28 @@ interface OrdersListProps {
   onCreateDrop?: (startDate: string, startTime: string, endDate: string, endTime: string) => void;
   inventorySnapshot?: string | null; // JSON string: { [variantId: string]: number }
   onScoreCalculated?: (score: DropPerformanceScore | null) => void;
+  // Data callbacks to pass data to parent
+  onDataCalculated?: (data: OrderAnalysisData) => void;
+  // Control which sections to render
+  hideSections?: {
+    orderData?: boolean;
+    summaryMetrics?: boolean;
+    soldOutVariants?: boolean;
+    productSalesBreakdown?: boolean;
+    ordersTable?: boolean;
+  };
 }
 
-const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime, dropEndTime, onCreateDrop, inventorySnapshot, onScoreCalculated }) => {
+const OrdersListWithFilters: React.FC<OrdersListProps> = ({
+  shop,
+  dropStartTime,
+  dropEndTime,
+  onCreateDrop,
+  inventorySnapshot,
+  onScoreCalculated,
+  onDataCalculated,
+  hideSections = {},
+}) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -1530,6 +1526,30 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       .slice(0, 4);
   }, [sortedOrders]);
 
+  // Helper function to format currency
+  const formatCurrency = useCallback((amount: number) => {
+    return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }, []);
+
+  // Memoize the calculated data object for performance
+  const calculatedData: OrderAnalysisData = useMemo(() => ({
+    salesMetrics,
+    customerMetrics,
+    topProducts,
+    productSummary: sortedProductSummary,
+    soldOutVariants: sortedProductSummary.filter(p => p.remainingInventory <= 0),
+    productImages,
+    syncStatus,
+    formatCurrency,
+  }), [salesMetrics, customerMetrics, topProducts, sortedProductSummary, productImages, syncStatus, formatCurrency]);
+
+  // Pass calculated data to parent component
+  useEffect(() => {
+    if (onDataCalculated) {
+      onDataCalculated(calculatedData);
+    }
+  }, [onDataCalculated, calculatedData]);
+
   // Early returns - placed after all hooks to comply with Rules of Hooks
   if (loading) {
     return (
@@ -1613,11 +1633,6 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
     );
   }
 
-  // Helper function to format currency
-  const formatCurrency = (amount: number) => {
-    return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
   // Calculate Drop Performance Score (computed value, not a hook)
   let performanceScore: ReturnType<typeof calculateDropPerformanceScore> | null = null;
   if (dropStartTime && dropEndTime) {
@@ -1694,7 +1709,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       {syncStatus?.status === 'syncing' && <SyncProgressBanner />}
 
       {/* Sync Orders Button (always visible when not syncing) */}
-      {syncStatus?.status !== 'syncing' && (
+      {!hideSections.orderData && syncStatus?.status !== 'syncing' && (
         <Card>
           <InlineStack align="space-between" blockAlign="center">
             <InlineStack gap="200" blockAlign="center">
@@ -1731,13 +1746,15 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       )}
 
       {/* Summary Metrics Section */}
-      <SummaryMetricsCard
-        salesMetrics={salesMetrics}
-        customerMetrics={customerMetrics}
-        topProducts={topProducts}
-        productImages={productImages}
-        formatCurrency={formatCurrency}
-      />
+      {!hideSections.summaryMetrics && (
+        <SummaryMetricsCard
+          salesMetrics={salesMetrics}
+          customerMetrics={customerMetrics}
+          topProducts={topProducts}
+          productImages={productImages}
+          formatCurrency={formatCurrency}
+        />
+      )}
 
       {/* Inventory Loading Indicator */}
       {inventoryLoading && !isExploreMode && (
@@ -1752,7 +1769,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       )}
 
       {/* Sold Out Variants Section (only in drop analysis mode) */}
-      {!isExploreMode && (
+      {!hideSections.soldOutVariants && !isExploreMode && (
         <SoldOutVariantsSection
           soldOutVariants={sortedProductSummary.filter(p => p.remainingInventory <= 0)}
           dropStartTime={dropStartTime}
@@ -1761,7 +1778,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       )}
 
       {/* Product Sales Summary Section (only in drop analysis mode) */}
-      {!isExploreMode && productSummary.length > 0 && (
+      {!hideSections.productSalesBreakdown && !isExploreMode && productSummary.length > 0 && (
         <Card>
           <BlockStack gap="400">
             <InlineStack align="space-between">
@@ -2081,11 +2098,12 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
       )}
 
       {/* Orders Section - Last */}
-      <Card>
-        <BlockStack gap="400">
-          <Text as="h2" variant="headingLg">
-            Orders
-          </Text>
+      {!hideSections.ordersTable && (
+        <Card>
+          <BlockStack gap="400">
+            <Text as="h2" variant="headingLg">
+              Orders
+            </Text>
           <Text as="p" variant="bodySm" tone="subdued">
             Complete list of all orders placed during the selected time period
           </Text>
@@ -2127,6 +2145,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({ shop, dropStartTime,
           </div>
         </BlockStack>
       </Card>
+      )}
     </BlockStack>
   );
 };
