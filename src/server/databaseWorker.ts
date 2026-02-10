@@ -60,6 +60,36 @@ try {
 } catch {
   // Column already exists
 }
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN cached_net_sales REAL`);
+} catch {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN cached_order_count INTEGER`);
+} catch {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN cached_gross_sales REAL`);
+} catch {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN cached_discounts REAL`);
+} catch {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN cached_refunds REAL`);
+} catch {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE drops ADD COLUMN metrics_last_updated TEXT`);
+} catch {
+  // Column already exists
+}
 
 // Operation types
 export type DatabaseOperation =
@@ -69,7 +99,8 @@ export type DatabaseOperation =
   | { type: 'updateDrop'; id: string; input: UpdateDropInput }
   | { type: 'deleteDrop'; id: string }
   | { type: 'updateDropInventory'; id: string; input: UpdateInventoryInput }
-  | { type: 'updateDropOriginalSnapshot'; id: string; snapshot: string };
+  | { type: 'updateDropOriginalSnapshot'; id: string; snapshot: string }
+  | { type: 'updateDropMetrics'; id: string; metrics: DropMetrics };
 
 export interface Drop {
   id: string;
@@ -83,6 +114,12 @@ export interface Drop {
   snapshot_taken_at?: string | null;
   inventory_source?: 'auto' | 'manual' | 'csv' | null;
   original_inventory_snapshot?: string | null;
+  cached_net_sales?: number | null;
+  cached_order_count?: number | null;
+  cached_gross_sales?: number | null;
+  cached_discounts?: number | null;
+  cached_refunds?: number | null;
+  metrics_last_updated?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -109,6 +146,14 @@ export interface UpdateDropInput {
 export interface UpdateInventoryInput {
   inventory_snapshot: string;
   inventory_source: 'auto' | 'manual' | 'csv';
+}
+
+export interface DropMetrics {
+  netSales: number;
+  orderCount: number;
+  grossSales: number;
+  discounts: number;
+  refunds: number;
 }
 
 // Database operation implementations
@@ -209,6 +254,29 @@ function updateDropOriginalSnapshot(id: string, snapshot: string): void {
   stmt.run(snapshot, id);
 }
 
+function updateDropMetrics(id: string, metrics: DropMetrics): Drop | undefined {
+  const stmt = db.prepare(`
+    UPDATE drops
+    SET cached_net_sales = ?,
+        cached_order_count = ?,
+        cached_gross_sales = ?,
+        cached_discounts = ?,
+        cached_refunds = ?,
+        metrics_last_updated = datetime('now'),
+        updated_at = datetime('now')
+    WHERE id = ?
+  `);
+  stmt.run(
+    metrics.netSales,
+    metrics.orderCount,
+    metrics.grossSales,
+    metrics.discounts,
+    metrics.refunds,
+    id
+  );
+  return getDropById(id);
+}
+
 // Worker entry point - this function is called by piscina for each task
 export default function handleOperation(operation: DatabaseOperation): unknown {
   switch (operation.type) {
@@ -233,6 +301,9 @@ export default function handleOperation(operation: DatabaseOperation): unknown {
     case 'updateDropOriginalSnapshot':
       updateDropOriginalSnapshot(operation.id, operation.snapshot);
       return undefined;
+
+    case 'updateDropMetrics':
+      return updateDropMetrics(operation.id, operation.metrics);
 
     default:
       throw new Error(`Unknown operation type: ${(operation as any).type}`);

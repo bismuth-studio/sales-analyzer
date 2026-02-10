@@ -15,6 +15,8 @@ export {
   deleteDrop,
   updateDropInventory,
   updateDropOriginalSnapshot,
+  updateDropMetrics,
+  runDatabaseOperation,
   getPoolStats,
   shutdown,
 } from './databaseAsync';
@@ -24,4 +26,5 @@ export type {
   CreateDropInput,
   UpdateDropInput,
   UpdateInventoryInput,
+  DropMetrics,
 } from './databaseAsync';

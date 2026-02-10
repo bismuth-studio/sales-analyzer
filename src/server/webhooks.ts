@@ -11,6 +11,7 @@ import {
   clearProductCacheForShop,
   clearOrdersForShop,
 } from './sessionStorage';
+import { updateDropMetricsForOrder } from './dropMetricsService';
 
 const router = Router();
 
@@ -282,6 +283,9 @@ router.post('/orders/create', verifyWebhook, async (req: Request, res: Response)
     // Store the order in the cache
     upsertOrders(shop!, [cachedOrder]);
 
+    // Update metrics for affected drops
+    await updateDropMetricsForOrder(shop!, order.created_at);
+
     console.log(`✅ Order ${order.name} synced to cache for ${shop}`);
     res.status(200).send('Order synced successfully');
   } catch (error) {
@@ -344,6 +348,9 @@ router.post('/orders/updated', verifyWebhook, async (req: Request, res: Response
 
     // Update the order in the cache
     upsertOrders(shop!, [cachedOrder]);
+
+    // Update metrics for affected drops
+    await updateDropMetricsForOrder(shop!, order.created_at);
 
     console.log(`✅ Order ${order.name} updated in cache for ${shop}`);
     res.status(200).send('Order updated successfully');

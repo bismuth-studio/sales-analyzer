@@ -18,6 +18,7 @@ import {
   getLatestOrderId,
   getOrderCount,
 } from './sessionStorage';
+import { updateShopDropMetrics } from './dropMetricsService';
 
 // Types for sync events
 export type SyncEventType = 'started' | 'progress' | 'complete' | 'error';
@@ -433,6 +434,14 @@ async function runOrderSync(
   });
 
   console.log(`Order sync completed for ${shop}. Total orders: ${finalCount}`);
+
+  // Update cached metrics for all drops after sync completes
+  try {
+    await updateShopDropMetrics(shop);
+    console.log(`Drop metrics updated for ${shop}`);
+  } catch (error) {
+    console.error('Error updating drop metrics after sync:', error);
+  }
 }
 
 /**

@@ -13,10 +13,11 @@ import type {
   UpdateDropInput,
   UpdateInventoryInput,
   DatabaseOperation,
+  DropMetrics,
 } from './databaseWorker';
 
 // Re-export types for consumers
-export type { Drop, CreateDropInput, UpdateDropInput, UpdateInventoryInput };
+export type { Drop, CreateDropInput, UpdateDropInput, UpdateInventoryInput, DropMetrics };
 
 // Query timeout (5 seconds max for reads, 10 seconds for writes)
 const READ_TIMEOUT = 5000;
@@ -118,6 +119,26 @@ export async function updateDropOriginalSnapshot(id: string, snapshot: string): 
 }
 
 /**
+ * Update cached metrics for a drop
+ */
+export async function updateDropMetrics(id: string, metrics: DropMetrics): Promise<Drop | undefined> {
+  return runOperation<Drop | undefined>(
+    { type: 'updateDropMetrics', id, metrics },
+    WRITE_TIMEOUT
+  );
+}
+
+/**
+ * Run a generic database operation (for flexibility)
+ */
+export async function runDatabaseOperation<T = unknown>(operation: DatabaseOperation): Promise<T> {
+  // Determine timeout based on operation type
+  const isReadOperation = operation.type === 'getDropsByShop' || operation.type === 'getDropById';
+  const timeout = isReadOperation ? READ_TIMEOUT : WRITE_TIMEOUT;
+  return runOperation<T>(operation, timeout);
+}
+
+/**
  * Get worker pool statistics (for monitoring)
  */
 export function getPoolStats() {
@@ -142,6 +163,8 @@ export default {
   deleteDrop,
   updateDropInventory,
   updateDropOriginalSnapshot,
+  updateDropMetrics,
+  runDatabaseOperation,
   getPoolStats,
   shutdown,
 };

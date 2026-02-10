@@ -9,6 +9,7 @@ import {
   updateDropOriginalSnapshot,
 } from './database';
 import { getSession, shopify } from './shopify';
+import { updateDropMetricsCache, updateShopDropMetrics } from './dropMetricsService';
 
 const router = Router();
 
@@ -179,6 +180,9 @@ router.post('/', requireShopAuth, async (req: AuthenticatedRequest, res: Respons
       snapshot_taken_at: snapshotTakenAt,
     });
 
+    // Calculate and cache initial metrics
+    await updateDropMetricsCache(drop);
+
     console.log(`Drop created with inventory snapshot: ${inventorySnapshot ? 'yes' : 'no'}`);
     res.status(201).json({ drop });
   } catch (error) {
@@ -212,6 +216,11 @@ router.put('/:id', requireShopAuth, async (req: AuthenticatedRequest, res: Respo
       collection_id,
       collection_title,
     });
+
+    // Recalculate metrics if time range changed
+    if (drop && (start_time || end_time)) {
+      await updateDropMetricsCache(drop);
+    }
 
     res.json({ drop });
   } catch (error) {
@@ -365,6 +374,27 @@ router.post('/:id/inventory/reset', requireShopAuth, async (req: AuthenticatedRe
   } catch (error) {
     console.error('Error resetting inventory:', error);
     res.status(500).json({ error: 'Failed to reset inventory' });
+  }
+});
+
+// POST /api/drops/refresh-metrics - Refresh cached metrics for all drops
+router.post('/refresh-metrics', requireShopAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const shop = req.validatedShop!;
+
+  try {
+    console.log(`Refreshing metrics for all drops in shop: ${shop}`);
+    await updateShopDropMetrics(shop);
+
+    const drops = await getDropsByShop(shop);
+
+    res.json({
+      success: true,
+      message: `Metrics refreshed for ${drops.length} drops`,
+      dropsUpdated: drops.length
+    });
+  } catch (error) {
+    console.error('Error refreshing drop metrics:', error);
+    res.status(500).json({ error: 'Failed to refresh drop metrics' });
   }
 });
 
