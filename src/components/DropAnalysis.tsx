@@ -180,12 +180,6 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
   const soldOutVariants = orderData?.soldOutVariants || [];
   const syncStatus = orderData?.syncStatus;
 
-  // Calculate top and worst performing products from productSummary
-  const productSummary = orderData?.productSummary || [];
-  const sortedByRevenue = [...productSummary].sort((a, b) => b.totalRevenue - a.totalRevenue);
-  const topProducts = sortedByRevenue.slice(0, 5);
-  const worstProducts = sortedByRevenue.slice(-5).reverse();
-
   // Loading skeleton for cards
   const LoadingSkeleton = () => (
     <Card>
@@ -277,43 +271,67 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
             </Card>
           </InlineGrid>
 
-          {/* 4. Top Performing and Worst Performing Products - Two Column Layout */}
+          {/* 4. Product Performance Rankings + Sold Out Variants - Two Column Layout */}
           <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
             {isDataLoading ? (
               <>
+                <LoadingSkeleton />
+                <LoadingSkeleton />
+                <LoadingSkeleton />
+                <LoadingSkeleton />
                 <LoadingSkeleton />
                 <LoadingSkeleton />
               </>
             ) : (
               <>
                 <PerformingProductsCard
-                  title="Top Performing products"
-                  subtitle="Best selling products during this drop"
-                  products={topProducts}
+                  title="Star Performers"
+                  subtitle="High velocity with excellent sell-through"
+                  products={orderData?.productRankings?.starPerformers || []}
                   formatCurrency={formatCurrency}
-                  isTop={true}
+                  badgeTone="success"
+                  showRankingReason={true}
                 />
                 <PerformingProductsCard
-                  title="Worst Performing products"
-                  subtitle="Lowest selling products during this drop"
-                  products={worstProducts}
+                  title="Revenue Champions"
+                  subtitle="Highest revenue generators"
+                  products={orderData?.productRankings?.revenueChampions || []}
                   formatCurrency={formatCurrency}
-                  isTop={false}
+                  badgeTone="info"
+                  showRankingReason={true}
+                />
+                <PerformingProductsCard
+                  title="Sleeper Hits"
+                  subtitle="Unexpected outperformers"
+                  products={orderData?.productRankings?.sleeperHits || []}
+                  formatCurrency={formatCurrency}
+                  badgeTone="warning"
+                  showRankingReason={true}
+                />
+                <PerformingProductsCard
+                  title="Slow Movers"
+                  subtitle="Low velocity, needs attention"
+                  products={orderData?.productRankings?.slowMovers || []}
+                  formatCurrency={formatCurrency}
+                  badgeTone="attention"
+                  showRankingReason={true}
+                />
+                <PerformingProductsCard
+                  title="Duds"
+                  subtitle="Poor performance across metrics"
+                  products={orderData?.productRankings?.duds || []}
+                  formatCurrency={formatCurrency}
+                  badgeTone="critical"
+                  showRankingReason={true}
+                />
+                <SoldOutVariantsSection
+                  soldOutVariants={soldOutVariants}
+                  dropStartTime={drop.start_time}
+                  formatCurrency={formatCurrency}
                 />
               </>
             )}
           </InlineGrid>
-
-          {/* 5. Sold Out Variants Section */}
-          {isDataLoading ? (
-            <LoadingSkeleton />
-          ) : (
-            <SoldOutVariantsSection
-              soldOutVariants={soldOutVariants}
-              dropStartTime={drop.start_time}
-              formatCurrency={formatCurrency}
-            />
-          )}
 
           {/* 6. Inventory Management Section */}
           <InventoryManagement

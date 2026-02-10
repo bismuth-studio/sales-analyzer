@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, BlockStack, Text, InlineStack } from '@shopify/polaris';
+import { Card, BlockStack, Text, InlineStack, Badge } from '@shopify/polaris';
 
 interface Product {
   productId: number;
@@ -7,6 +7,7 @@ interface Product {
   unitsSold: number;
   totalRevenue: number;
   imageUrl?: string;
+  rankingReason?: string;
 }
 
 interface PerformingProductsCardProps {
@@ -15,6 +16,8 @@ interface PerformingProductsCardProps {
   products: Product[];
   formatCurrency: (amount: number) => string;
   isTop?: boolean;
+  badgeTone?: 'success' | 'info' | 'warning' | 'attention' | 'critical';
+  showRankingReason?: boolean;
 }
 
 export const PerformingProductsCard: React.FC<PerformingProductsCardProps> = ({
@@ -23,15 +26,22 @@ export const PerformingProductsCard: React.FC<PerformingProductsCardProps> = ({
   products,
   formatCurrency,
   isTop = true,
+  badgeTone,
+  showRankingReason = false,
 }) => {
   const displayProducts = products.slice(0, 5); // Show top/bottom 5
 
   return (
     <Card>
       <BlockStack gap="300">
-        <Text as="h2" variant="headingLg">
-          {title}
-        </Text>
+        <InlineStack align="space-between" blockAlign="center">
+          <Text as="h2" variant="headingLg">
+            {title}
+          </Text>
+          {badgeTone && displayProducts.length > 0 && (
+            <Badge tone={badgeTone}>{displayProducts.length}</Badge>
+          )}
+        </InlineStack>
         <Text as="p" variant="bodySm" tone="subdued">
           {subtitle}
         </Text>
@@ -95,6 +105,11 @@ export const PerformingProductsCard: React.FC<PerformingProductsCardProps> = ({
                       <Text as="p" variant="bodySm" tone="subdued">
                         {product.unitsSold} units sold
                       </Text>
+                      {showRankingReason && product.rankingReason && (
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          {product.rankingReason}
+                        </Text>
+                      )}
                     </BlockStack>
                   </InlineStack>
                   <Text as="p" variant="bodyMd" fontWeight="semibold">

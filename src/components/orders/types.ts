@@ -2,6 +2,8 @@
  * Shared types for order-related components
  */
 
+import type { ProductRankingCategories } from '../../utils/productRanking';
+
 export interface Order {
   id: number;
   name: string;
@@ -152,4 +154,9 @@ export interface OrderAnalysisData {
   productImages: Record<string, string>;
   syncStatus: SyncStatus | null;
   formatCurrency: (amount: number) => string;
+  aggregatedProductSummary?: AggregatedProductSummary[];
+  vendorSummary?: VendorSummary[];
+  categorySummary?: CategorySummary[];
+  productTypeSummary?: ProductTypeSummary[];
+  productRankings?: ProductRankingCategories;
 }

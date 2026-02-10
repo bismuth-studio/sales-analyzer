@@ -15,6 +15,7 @@ import {
 } from '@shopify/polaris';
 import { RefreshIcon } from '@shopify/polaris-icons';
 import { calculateDropPerformanceScore, type DropPerformanceScore } from '../utils/dropScore';
+import { rankProducts } from '../utils/productRanking';
 import {
   SummaryMetricsCard,
   SoldOutVariantsSection,
@@ -91,6 +92,15 @@ interface VendorSummary {
 
 interface ColorSummary {
   color: string;
+  variantCount: number;
+  unitsSold: number;
+  totalRevenue: number;
+  currency: string;
+  revenuePercentage: number;
+}
+
+interface SizeSummary {
+  size: string;
   variantCount: number;
   unitsSold: number;
   totalRevenue: number;
@@ -182,6 +192,11 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
   const [colorSummary, setColorSummary] = useState<ColorSummary[]>([]);
   const [colorSortColumn, setColorSortColumn] = useState<number>(2); // Default to Units Sold
   const [colorSortDirection, setColorSortDirection] = useState<'ascending' | 'descending'>('descending');
+
+  // Size summary (by size)
+  const [sizeSummary, setSizeSummary] = useState<SizeSummary[]>([]);
+  const [sizeSortColumn, setSizeSortColumn] = useState<number>(2); // Default to Units Sold
+  const [sizeSortDirection, setSizeSortDirection] = useState<'ascending' | 'descending'>('descending');
 
   // Product type summary (by product type)
   const [productTypeSummary, setProductTypeSummary] = useState<ProductTypeSummary[]>([]);
@@ -699,6 +714,71 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
   useEffect(() => {
     generateColorSummary();
   }, [generateColorSummary]);
+
+  // Generate size summary (by size)
+  const generateSizeSummary = useCallback(() => {
+    const sizeMap = new Map<string, SizeSummary & { variantIds: Set<number> }>();
+
+    filteredOrders.forEach((order) => {
+      if (!order.line_items || order.line_items.length === 0) {
+        return;
+      }
+
+      order.line_items.forEach((item) => {
+        // Parse size from variant_title (format: "Color / Size")
+        let size = 'Unknown';
+        if (item.variant_title) {
+          const parts = item.variant_title.split('/').map(part => part.trim());
+          size = parts[1] || 'Unknown';
+        }
+
+        if (sizeMap.has(size)) {
+          const existing = sizeMap.get(size)!;
+          existing.unitsSold += item.quantity;
+          existing.totalRevenue += parseFloat(item.price) * item.quantity;
+          if (item.variant_id) {
+            existing.variantIds.add(item.variant_id);
+          }
+        } else {
+          const variantIds = new Set<number>();
+          if (item.variant_id) {
+            variantIds.add(item.variant_id);
+          }
+
+          sizeMap.set(size, {
+            size,
+            variantCount: 0,
+            unitsSold: item.quantity,
+            totalRevenue: parseFloat(item.price) * item.quantity,
+            currency: order.currency,
+            revenuePercentage: 0,
+            variantIds,
+          });
+        }
+      });
+    });
+
+    const summary = Array.from(sizeMap.values()).map(s => ({
+      size: s.size,
+      variantCount: s.variantIds.size,
+      unitsSold: s.unitsSold,
+      totalRevenue: s.totalRevenue,
+      currency: s.currency,
+      revenuePercentage: 0,
+    }));
+
+    const totalRevenue = summary.reduce((sum, s) => sum + s.totalRevenue, 0);
+    summary.forEach(s => {
+      s.revenuePercentage = totalRevenue > 0 ? (s.totalRevenue / totalRevenue) * 100 : 0;
+    });
+
+    setSizeSummary(summary);
+  }, [filteredOrders]);
+
+  // Update size summary when filtered orders change
+  useEffect(() => {
+    generateSizeSummary();
+  }, [generateSizeSummary]);
 
   // Generate product type summary (by product type)
   const generateProductTypeSummary = useCallback(() => {
@@ -1333,6 +1413,62 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
     setColorSortDirection(direction);
   };
 
+  // Sort size summary (memoized)
+  const sortedSizeSummary = useMemo(() => {
+    return [...sizeSummary].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      const direction = sizeSortDirection;
+
+      switch (sizeSortColumn) {
+        case 0: // Row index (not sortable)
+          return 0;
+        case 1: // Size name
+          aValue = a.size.toLowerCase();
+          bValue = b.size.toLowerCase();
+          break;
+        case 2: // Variants
+          aValue = a.variantCount;
+          bValue = b.variantCount;
+          break;
+        case 3: // Units sold
+          aValue = a.unitsSold;
+          bValue = b.unitsSold;
+          break;
+        case 4: // Total revenue
+          aValue = a.totalRevenue;
+          bValue = b.totalRevenue;
+          break;
+        case 5: // Revenue percentage
+          aValue = a.revenuePercentage;
+          bValue = b.revenuePercentage;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return direction === 'ascending' ? -1 : 1;
+      if (aValue > bValue) return direction === 'ascending' ? 1 : -1;
+      return 0;
+    });
+  }, [sizeSummary, sizeSortColumn, sizeSortDirection]);
+
+  // Column headings for Size Summary table
+  const sizeHeadings: [{ title: string }, ...{ title: string }[]] = [
+    { title: '#' },
+    { title: 'Size' },
+    { title: 'Variants' },
+    { title: 'Units Sold' },
+    { title: 'Total Revenue' },
+    { title: 'Revenue %' },
+  ];
+
+  // Handle sort for Size Summary table
+  const handleSizeSort = (index: number, direction: 'ascending' | 'descending') => {
+    setSizeSortColumn(index);
+    setSizeSortDirection(direction);
+  };
+
   // Sort product type summary (memoized)
   const sortedProductTypeSummary = useMemo(() => {
     return [...productTypeSummary].sort((a, b) => {
@@ -1450,6 +1586,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
     { id: 'by-variant', content: 'By Variant' },
     { id: 'by-product', content: 'By Product' },
     { id: 'by-color', content: 'By Color' },
+    { id: 'by-size', content: 'By Size' },
     { id: 'by-vendor', content: 'By Vendor' },
     { id: 'by-product-type', content: 'By Product Type' },
     { id: 'by-category', content: 'By Category' },
@@ -1542,16 +1679,49 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
   }, []);
 
   // Memoize the calculated data object for performance
-  const calculatedData: OrderAnalysisData = useMemo(() => ({
+  const calculatedData: OrderAnalysisData = useMemo(() => {
+    // Calculate product rankings if we have drop times
+    const productRankings = dropStartTime && dropEndTime
+      ? rankProducts(
+          sortedProductSummary,
+          aggregatedProductSummary,
+          vendorSummary,
+          categorySummary,
+          dropStartTime,
+          dropEndTime
+        )
+      : undefined;
+
+    return {
+      salesMetrics,
+      customerMetrics,
+      topProducts,
+      productSummary: sortedProductSummary,
+      soldOutVariants: sortedProductSummary.filter(p => p.remainingInventory <= 0),
+      productImages,
+      syncStatus,
+      formatCurrency,
+      aggregatedProductSummary,
+      vendorSummary,
+      categorySummary,
+      productTypeSummary,
+      productRankings,
+    };
+  }, [
     salesMetrics,
     customerMetrics,
     topProducts,
-    productSummary: sortedProductSummary,
-    soldOutVariants: sortedProductSummary.filter(p => p.remainingInventory <= 0),
+    sortedProductSummary,
     productImages,
     syncStatus,
     formatCurrency,
-  }), [salesMetrics, customerMetrics, topProducts, sortedProductSummary, productImages, syncStatus, formatCurrency]);
+    aggregatedProductSummary,
+    vendorSummary,
+    categorySummary,
+    productTypeSummary,
+    dropStartTime,
+    dropEndTime,
+  ]);
 
   // Pass calculated data to parent component
   useEffect(() => {
@@ -1989,6 +2159,44 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
               ) : selectedProductTab === 3 ? (
                 <>
                   <Text as="p" variant="bodyMd" fontWeight="semibold">
+                    {sizeSummary.length} sizes from {sortedOrders.length} orders
+                  </Text>
+                  <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                    <IndexTable
+                      resourceName={{ singular: 'size', plural: 'sizes' }}
+                      itemCount={sortedSizeSummary.length}
+                      headings={sizeHeadings}
+                      selectable={false}
+                      sortable={[false, true, true, true, true, true]}
+                      defaultSortDirection="descending"
+                      sortDirection={sizeSortDirection}
+                      sortColumnIndex={sizeSortColumn}
+                      onSort={handleSizeSort}
+                    >
+                      {sortedSizeSummary.map((size, index) => (
+                        <IndexTable.Row
+                          id={size.size}
+                          key={size.size}
+                          position={index}
+                        >
+                          <IndexTable.Cell>{index + 1}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            <Text as="span" fontWeight="semibold">{size.size}</Text>
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{size.variantCount}</IndexTable.Cell>
+                          <IndexTable.Cell>{size.unitsSold}</IndexTable.Cell>
+                          <IndexTable.Cell>
+                            {formatCurrency(size.totalRevenue)}
+                          </IndexTable.Cell>
+                          <IndexTable.Cell>{size.revenuePercentage.toFixed(1)}%</IndexTable.Cell>
+                        </IndexTable.Row>
+                      ))}
+                    </IndexTable>
+                  </div>
+                </>
+              ) : selectedProductTab === 4 ? (
+                <>
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">
                     {vendorSummary.length} vendors from {sortedOrders.length} orders
                   </Text>
                   <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
@@ -2024,7 +2232,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
                     </IndexTable>
                   </div>
                 </>
-              ) : selectedProductTab === 4 ? (
+              ) : selectedProductTab === 5 ? (
                 <>
                   <Text as="p" variant="bodyMd" fontWeight="semibold">
                     {productTypeSummary.length} product types from {sortedOrders.length} orders
@@ -2062,7 +2270,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
                     </IndexTable>
                   </div>
                 </>
-              ) : selectedProductTab === 5 ? (
+              ) : selectedProductTab === 6 ? (
                 <>
                   <Text as="p" variant="bodyMd" fontWeight="semibold">
                     {categorySummary.length} categories from {sortedOrders.length} orders
