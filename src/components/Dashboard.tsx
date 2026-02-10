@@ -28,6 +28,24 @@ interface Drop {
   updated_at: string;
 }
 
+interface DropMetrics {
+  netSales: number;
+  totalOrders: number;
+}
+
+interface Order {
+  id: string;
+  created_at: string;
+  total_line_items_price?: string;
+  total_price?: string;
+  total_discounts?: string;
+  refunds?: Array<{
+    transactions: Array<{
+      amount?: string;
+    }>;
+  }>;
+}
+
 interface DashboardProps {
   shop: string;
 }
@@ -49,6 +67,7 @@ function Dashboard({ shop }: DashboardProps) {
   } | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('start_time');
   const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
+  const [dropMetrics, setDropMetrics] = useState<Record<string, DropMetrics>>({});
 
   const fetchDrops = useCallback(async () => {
     if (!shop) return;
@@ -70,9 +89,65 @@ function Dashboard({ shop }: DashboardProps) {
     }
   }, [shop]);
 
+  const calculateDropMetrics = useCallback(async (drops: Drop[]) => {
+    if (!shop || drops.length === 0) return;
+
+    try {
+      // Fetch all orders
+      const response = await fetch(`/api/orders/recent?shop=${encodeURIComponent(shop)}`);
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const orders: Order[] = data.orders || [];
+
+      // Calculate metrics for each drop
+      const metrics: Record<string, DropMetrics> = {};
+
+      drops.forEach(drop => {
+        const dropStart = new Date(drop.start_time);
+        const dropEnd = new Date(drop.end_time);
+
+        // Filter orders by drop time range
+        const dropOrders = orders.filter(order => {
+          const orderTime = new Date(order.created_at);
+          return orderTime >= dropStart && orderTime <= dropEnd;
+        });
+
+        // Calculate net sales using same formula as OrdersListWithFilters
+        const grossSales = dropOrders.reduce((sum, order) =>
+          sum + parseFloat(order.total_line_items_price || order.total_price || '0'), 0);
+
+        const totalDiscounts = dropOrders.reduce((sum, order) =>
+          sum + parseFloat(order.total_discounts || '0'), 0);
+
+        const totalRefunds = dropOrders.reduce((sum, order) => {
+          if (!order.refunds || order.refunds.length === 0) return sum;
+          return sum + order.refunds.reduce((refundSum, refund) =>
+            refundSum + refund.transactions.reduce((txSum, tx) =>
+              txSum + parseFloat(tx.amount || '0'), 0), 0);
+        }, 0);
+
+        metrics[drop.id] = {
+          netSales: grossSales - totalDiscounts - totalRefunds,
+          totalOrders: dropOrders.length
+        };
+      });
+
+      setDropMetrics(metrics);
+    } catch (err) {
+      console.error('Failed to calculate drop metrics:', err);
+    }
+  }, [shop]);
+
   useEffect(() => {
     fetchDrops();
   }, [fetchDrops]);
+
+  useEffect(() => {
+    if (drops.length > 0) {
+      calculateDropMetrics(drops);
+    }
+  }, [drops, calculateDropMetrics]);
 
   const handleSort = useCallback(
     (key: SortKey) => {
@@ -110,6 +185,13 @@ function Dashboard({ shop }: DashboardProps) {
       minute: '2-digit',
       hour12: true,
     });
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(amount);
   };
 
   const getDropStatus = (drop: Drop): { status: 'success' | 'attention' | 'info'; label: string } => {
@@ -216,6 +298,7 @@ function Dashboard({ shop }: DashboardProps) {
 
   const rowMarkup = sortedDrops.map((drop, index) => {
     const status = getDropStatus(drop);
+    const metrics = dropMetrics[drop.id];
     return (
       <IndexTable.Row
         id={drop.id}
@@ -234,30 +317,40 @@ function Dashboard({ shop }: DashboardProps) {
           {drop.collection_title || <Text as="span" tone="subdued">All products</Text>}
         </IndexTable.Cell>
         <IndexTable.Cell>
+          <Text variant="bodyMd" fontWeight="semibold" as="span">
+            {metrics ? formatCurrency(metrics.netSales) : <Text as="span" tone="subdued">—</Text>}
+          </Text>
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          {metrics ? metrics.totalOrders : <Text as="span" tone="subdued">—</Text>}
+        </IndexTable.Cell>
+        <IndexTable.Cell>
           <Badge tone={status.status}>{status.label}</Badge>
         </IndexTable.Cell>
         <IndexTable.Cell>
-          <InlineStack gap="200">
-            <Button
-              size="slim"
-              onClick={() => {
-                handleEditDrop(drop);
-              }}
-            >
-              Edit
-            </Button>
-            <Button
-              size="slim"
-              tone="critical"
-              onClick={() => {
-                if (confirm('Are you sure you want to delete this drop?')) {
-                  handleDeleteDrop(drop.id);
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </InlineStack>
+          <div onClick={(e) => e.stopPropagation()}>
+            <InlineStack gap="200">
+              <Button
+                size="slim"
+                onClick={() => {
+                  handleEditDrop(drop);
+                }}
+              >
+                Edit
+              </Button>
+              <Button
+                size="slim"
+                tone="critical"
+                onClick={() => {
+                  if (confirm('Are you sure you want to delete this drop?')) {
+                    handleDeleteDrop(drop.id);
+                  }
+                }}
+              >
+                Delete
+              </Button>
+            </InlineStack>
+          </div>
         </IndexTable.Cell>
       </IndexTable.Row>
     );
@@ -297,11 +390,13 @@ function Dashboard({ shop }: DashboardProps) {
                 { title: 'Start Time' },
                 { title: 'End Time' },
                 { title: 'Collection' },
+                { title: 'Net Sales' },
+                { title: 'Orders' },
                 { title: 'Status' },
                 { title: 'Actions' },
               ]}
               selectable={false}
-              sortable={[true, true, true, true, false, false]}
+              sortable={[true, true, true, true, false, false, false, false]}
               sortDirection={sortDirection}
               sortColumnIndex={['title', 'start_time', 'end_time', 'collection_title'].indexOf(sortKey)}
               onSort={(headingIndex) => {
