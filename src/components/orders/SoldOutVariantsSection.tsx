@@ -95,8 +95,8 @@ export const SoldOutVariantsSection: React.FC<SoldOutVariantsSectionProps> = ({
 
   return (
     <Card>
-      <BlockStack gap="400">
-        <InlineStack gap="200" align="start" blockAlign="center">
+      <BlockStack gap="300">
+        <InlineStack align="space-between" blockAlign="center">
           <Text as="h2" variant="headingLg">
             Sold Out Variants
           </Text>
@@ -107,57 +107,50 @@ export const SoldOutVariantsSection: React.FC<SoldOutVariantsSectionProps> = ({
         <Text as="p" variant="bodySm" tone="subdued">
           Products that have reached 100% sell-through based on starting inventory
         </Text>
-        <InlineStack gap="400" wrap>
+        <BlockStack gap="200">
           {soldOutVariants.map((product) => (
             <div
               key={`${product.productId}-${product.variantId}`}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
                 padding: '12px',
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fecaca',
+                backgroundColor: '#f6f6f7',
                 borderRadius: '8px',
-                minWidth: '220px',
               }}
             >
-              {product.imageUrl ? (
-                <img
-                  src={product.imageUrl}
-                  alt={product.productName}
-                  style={{
-                    width: '50px',
-                    height: '50px',
-                    objectFit: 'cover',
-                    borderRadius: '4px',
-                    flexShrink: 0,
-                  }}
-                />
-              ) : (
-                <div
-                  style={{
-                    width: '50px',
-                    height: '50px',
-                    backgroundColor: '#e1e1e1',
-                    borderRadius: '4px',
-                    flexShrink: 0,
-                  }}
-                />
-              )}
-              <div style={{ flex: 1, overflow: 'hidden' }}>
-                <BlockStack gap="050">
-                  <Text as="p" variant="bodySm" fontWeight="semibold" truncate>
-                    {product.productName}
-                  </Text>
-                  {(product.color || product.size) && (
-                    <Text as="p" variant="bodySm" tone="subdued">
-                      {[product.color, product.size].filter(Boolean).join(' / ')}
-                    </Text>
+              <InlineStack align="space-between" blockAlign="start">
+                <InlineStack gap="300" blockAlign="center">
+                  {product.imageUrl ? (
+                    <img
+                      src={product.imageUrl}
+                      alt={product.productName}
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        objectFit: 'cover',
+                        borderRadius: '4px',
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        backgroundColor: '#e1e1e1',
+                        borderRadius: '4px',
+                        flexShrink: 0,
+                      }}
+                    />
                   )}
-                </BlockStack>
-                <div style={{ marginTop: '8px' }}>
-                  <BlockStack gap="100">
+                  <BlockStack gap="050">
+                    <Text as="p" variant="bodyMd" fontWeight="semibold">
+                      {product.productName}
+                    </Text>
+                    {(product.color || product.size) && (
+                      <Text as="p" variant="bodySm" tone="subdued">
+                        {[product.color, product.size].filter(Boolean).join(' / ')}
+                      </Text>
+                    )}
                     <Text as="p" variant="bodySm" tone="critical">
                       {product.unitsSold} sold (100%)
                     </Text>
@@ -191,11 +184,14 @@ export const SoldOutVariantsSection: React.FC<SoldOutVariantsSectionProps> = ({
                       </Text>
                     )}
                   </BlockStack>
-                </div>
-              </div>
+                </InlineStack>
+                <Text as="p" variant="bodyMd" fontWeight="semibold">
+                  {formatCurrency(product.totalRevenue)}
+                </Text>
+              </InlineStack>
             </div>
           ))}
-        </InlineStack>
+        </BlockStack>
       </BlockStack>
     </Card>
   );

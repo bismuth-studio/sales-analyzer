@@ -24,6 +24,7 @@ import {
   SummaryMetricsCard,
   PerformingProductsCard,
   SoldOutVariantsSection,
+  TopSellersCard,
   type OrderAnalysisData,
 } from './orders';
 import type { DropPerformanceScore } from '../utils/dropScore';
@@ -223,8 +224,6 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
               <SummaryMetricsCard
                 salesMetrics={salesMetrics}
                 customerMetrics={customerMetrics}
-                topProducts={topProductsForSummary}
-                productImages={productImages}
                 formatCurrency={formatCurrency}
               />
             )}
@@ -281,9 +280,14 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
                 <LoadingSkeleton />
                 <LoadingSkeleton />
                 <LoadingSkeleton />
+                <LoadingSkeleton />
               </>
             ) : (
               <>
+                <TopSellersCard
+                  topProducts={topProductsForSummary}
+                  productImages={productImages}
+                />
                 <PerformingProductsCard
                   title="Star Performers"
                   subtitle="High velocity with excellent sell-through"
