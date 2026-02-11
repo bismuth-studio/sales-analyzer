@@ -290,43 +290,48 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
                 />
                 <PerformingProductsCard
                   title="Star Performers"
-                  subtitle="High velocity with excellent sell-through"
+                  subtitle="Products with >50% sell-through rate that sold quickly (at least 3 units sold)"
                   products={orderData?.productRankings?.starPerformers || []}
                   formatCurrency={formatCurrency}
                   badgeTone="success"
                   showRankingReason={true}
+                  emptyStateMessage="No products found with >50% sell-through and fast sales velocity. Products need strong performance to qualify."
                 />
                 <PerformingProductsCard
                   title="Revenue Champions"
-                  subtitle="Highest revenue generators"
+                  subtitle="Top 20% revenue earners with at least $100 in sales"
                   products={orderData?.productRankings?.revenueChampions || []}
                   formatCurrency={formatCurrency}
                   badgeTone="info"
                   showRankingReason={true}
+                  emptyStateMessage="No significant revenue generators found yet. This typically appears after sales activity picks up."
                 />
                 <PerformingProductsCard
                   title="Sleeper Hits"
-                  subtitle="Unexpected outperformers"
+                  subtitle="Products from underperforming categories (<15% revenue share) that exceed segment averages by 20%+"
                   products={orderData?.productRankings?.sleeperHits || []}
                   formatCurrency={formatCurrency}
                   badgeTone="warning"
                   showRankingReason={true}
+                  emptyStateMessage="No unexpected outperformers found from low-performing categories. Products from smaller categories need to significantly outperform to qualify."
                 />
                 <PerformingProductsCard
                   title="Slow Movers"
-                  subtitle="Low velocity, needs attention"
+                  subtitle="Products with <25% sell-through or high remaining inventory (drop must have ended)"
                   products={orderData?.productRankings?.slowMovers || []}
                   formatCurrency={formatCurrency}
                   badgeTone="attention"
                   showRankingReason={true}
+                  emptyStateMessage="All products are selling at a reasonable pace. No slow movers detected."
                 />
                 <PerformingProductsCard
                   title="Duds"
-                  subtitle="Poor performance across metrics"
+                  subtitle="Bottom 20% revenue earners with <20% sell-through (requires 24+ hours of data)"
                   products={orderData?.productRankings?.duds || []}
                   formatCurrency={formatCurrency}
                   badgeTone="critical"
                   showRankingReason={true}
+                  emptyStateMessage="No products found with very poor performance (<20% sell-through in bottom revenue tier). Either products are performing well or need more time."
                 />
                 <SoldOutVariantsSection
                   soldOutVariants={soldOutVariants}

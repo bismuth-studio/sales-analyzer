@@ -18,6 +18,7 @@ interface PerformingProductsCardProps {
   isTop?: boolean;
   badgeTone?: 'success' | 'info' | 'warning' | 'attention' | 'critical';
   showRankingReason?: boolean;
+  emptyStateMessage?: string;
 }
 
 export const PerformingProductsCard: React.FC<PerformingProductsCardProps> = ({
@@ -28,6 +29,7 @@ export const PerformingProductsCard: React.FC<PerformingProductsCardProps> = ({
   isTop = true,
   badgeTone,
   showRankingReason = false,
+  emptyStateMessage,
 }) => {
   const displayProducts = products.slice(0, 5); // Show top/bottom 5
 
@@ -120,9 +122,11 @@ export const PerformingProductsCard: React.FC<PerformingProductsCardProps> = ({
             ))}
           </BlockStack>
         ) : (
-          <Text as="p" variant="bodySm" tone="subdued">
-            No product data available
-          </Text>
+          <div style={{ padding: '20px', textAlign: 'center', backgroundColor: '#f6f6f7', borderRadius: '8px' }}>
+            <Text as="p" variant="bodySm" tone="subdued">
+              {emptyStateMessage || 'No products meet the criteria for this category'}
+            </Text>
+          </div>
         )}
       </BlockStack>
     </Card>

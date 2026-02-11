@@ -134,15 +134,23 @@ function identifyStarPerformers(
   dropStartTime: string,
   dropEndTime: string
 ): RankedProduct[] {
-  return products
-    .filter(p => {
-      const velocity = calculateVelocity(p, dropStartTime, dropEndTime);
-      return (
-        p.sellThroughRate > 70 &&
-        (velocity !== null ? velocity < 0.5 : p.sellThroughRate > 85) && // Fallback if no velocity data
-        p.unitsSold >= 5
-      );
-    })
+  console.log('⭐ Star Performers Analysis:');
+  const candidates = products.filter(p => {
+    const velocity = calculateVelocity(p, dropStartTime, dropEndTime);
+    // Adjusted: Lowered from 70% to 50% sell-through, more lenient velocity
+    const passesVelocity = velocity !== null ? velocity < 0.7 : p.sellThroughRate > 70;
+    const passes = p.sellThroughRate > 50 && passesVelocity && p.unitsSold >= 3;
+
+    if (p.sellThroughRate > 30) { // Log products with decent sell-through
+      console.log(`  - ${p.productName}: sell-through=${p.sellThroughRate.toFixed(1)}%, units=${p.unitsSold}, velocity=${velocity ? velocity.toFixed(2) : 'none'}, passes=${passes}`);
+    }
+
+    return passes;
+  });
+
+  console.log(`  Found ${candidates.length} star performers (adjusted: >50% sell-through, velocity <70%)`);
+
+  return candidates
     .map(p => {
       const velocity = calculateVelocity(p, dropStartTime, dropEndTime);
       const velocityPercent = velocity ? (velocity * 100).toFixed(0) : 'N/A';
@@ -190,29 +198,35 @@ function identifySleeperHits(
   vendorSummary: VendorSummary[],
   categorySummary: CategorySummary[]
 ): RankedProduct[] {
-  const totalRevenue = vendorSummary.reduce((sum, v) => sum + v.totalRevenue, 0);
+  console.log('😴 Sleeper Hits Analysis:');
+  console.log(`  - Vendor revenue shares:`, vendorSummary.map(v => `${v.vendor}=${v.revenuePercentage.toFixed(1)}%`));
+  console.log(`  - Category revenue shares:`, categorySummary.map(c => `${c.category}=${c.revenuePercentage.toFixed(1)}%`));
 
-  return products
-    .filter(p => {
-      const vendor = p.vendor || 'Unknown';
-      const category = p.category || 'Unknown';
+  const candidates = products.filter(p => {
+    const vendor = p.vendor || 'Unknown';
+    const category = p.category || 'Unknown';
 
-      // Check if from low-performing segment
-      const vendorRevShare = vendorSummary.find(v => v.vendor === vendor)?.revenuePercentage || 0;
-      const categoryRevShare = categorySummary.find(c => c.category === category)?.revenuePercentage || 0;
-      const isLowPerformingSegment = vendorRevShare < 15 || categoryRevShare < 15;
+    // Check if from low-performing segment
+    const vendorRevShare = vendorSummary.find(v => v.vendor === vendor)?.revenuePercentage || 0;
+    const categoryRevShare = categorySummary.find(c => c.category === category)?.revenuePercentage || 0;
+    const isLowPerformingSegment = vendorRevShare < 15 || categoryRevShare < 15;
 
-      if (!isLowPerformingSegment) return false;
+    if (!isLowPerformingSegment) return false;
 
-      // Check if outperforms segment average
-      const segmentAvg = segmentAverages.byVendor.get(vendor) || segmentAverages.byCategory.get(category) || 0;
-      const outperformanceRatio = segmentAvg > 0 ? p.sellThroughRate / segmentAvg : 0;
+    // Check if outperforms segment average
+    const segmentAvg = segmentAverages.byVendor.get(vendor) || segmentAverages.byCategory.get(category) || 0;
+    const outperformanceRatio = segmentAvg > 0 ? p.sellThroughRate / segmentAvg : 0;
 
-      return (
-        outperformanceRatio > 1.3 &&
-        p.sellThroughRate > 50
-      );
-    })
+    // Adjusted: Lowered from 30% outperformance to 20%, and from 50% to 30% sell-through
+    return (
+      outperformanceRatio > 1.2 &&
+      p.sellThroughRate > 30
+    );
+  });
+
+  console.log(`  Found ${candidates.length} sleeper hits (adjusted: low-rev category + 20% above avg + >30% sell-through)`);
+
+  return candidates
     .map(p => {
       const vendor = p.vendor || 'Unknown';
       const category = p.category || 'Unknown';
@@ -272,20 +286,36 @@ function identifyDuds(
   const oneDayMs = 24 * 60 * 60 * 1000;
   const dropOldEnough = Date.now() - dropStarted > oneDayMs;
 
-  if (!dropOldEnough) return [];
+  console.log('💔 Duds Analysis:');
+  console.log(`  - Drop old enough (>24hrs): ${dropOldEnough}`);
+
+  if (!dropOldEnough) {
+    console.log(`  - Drop age: ${((Date.now() - dropStarted) / oneDayMs).toFixed(1)} days`);
+    return [];
+  }
 
   const sortedByRevenue = [...products].sort((a, b) => a.totalRevenue - b.totalRevenue);
   const bottom20PercentCount = Math.ceil(sortedByRevenue.length * 0.2);
   const lowRevenueProducts = sortedByRevenue.slice(0, Math.max(bottom20PercentCount, 5));
 
-  return lowRevenueProducts
-    .filter(p => {
-      const revenuePerUnit = p.unitsSold > 0 ? p.totalRevenue / p.unitsSold : 0;
-      return (
-        p.sellThroughRate < 20 &&
-        revenuePerUnit < 20
-      );
-    })
+  console.log(`  - Bottom 20% products: ${lowRevenueProducts.length}`);
+
+  const candidates = lowRevenueProducts.filter(p => {
+    const revenuePerUnit = p.unitsSold > 0 ? p.totalRevenue / p.unitsSold : 0;
+    // Adjusted: Focus on low sell-through for bottom revenue products
+    // Removed price constraint since premium products can still be duds
+    const passes = p.sellThroughRate < 20;
+
+    if (p.sellThroughRate < 30 || revenuePerUnit < 30) {
+      console.log(`  - ${p.productName}: sell-through=${p.sellThroughRate.toFixed(1)}%, rev/unit=$${revenuePerUnit.toFixed(2)}, passes=${passes}`);
+    }
+
+    return passes;
+  });
+
+  console.log(`  Found ${candidates.length} duds (adjusted criteria: bottom 20% revenue + <20% sell-through)`);
+
+  return candidates
     .map(p => {
       const revenuePerUnit = p.unitsSold > 0 ? p.totalRevenue / p.unitsSold : 0;
 
@@ -310,8 +340,18 @@ export function rankProducts(
   dropStartTime: string,
   dropEndTime: string
 ): ProductRankingCategories {
+  console.log('🔍 Product Ranking Debug:');
+  console.log('- Total products:', productSummary.length);
+  console.log('- Aggregated products:', aggregatedProductSummary.length);
+  console.log('- Vendors:', vendorSummary.length);
+  console.log('- Categories:', categorySummary.length);
+  console.log('- Drop start:', dropStartTime);
+  console.log('- Drop end:', dropEndTime);
+
   // Enrich product data with vendor/category info
   const enrichedProducts = enrichProductData(productSummary, aggregatedProductSummary);
+  console.log('- Enriched products:', enrichedProducts.length);
+  console.log('- Sample enriched product:', enrichedProducts[0]);
 
   // Calculate segment averages for sleeper hit detection
   const segmentAverages = calculateSegmentAverages(aggregatedProductSummary);
@@ -323,26 +363,31 @@ export function rankProducts(
 
   // 1. Star Performers (highest priority)
   const starPerformers = identifyStarPerformers(enrichedProducts, dropStartTime, dropEndTime);
+  console.log('⭐ Star Performers:', starPerformers.length);
   starPerformers.forEach(p => assignedProductIds.add(p.variantId));
 
   // 2. Revenue Champions
   const availableForRevenue = enrichedProducts.filter(p => !assignedProductIds.has(p.variantId));
   const revenueChampions = identifyRevenueChampions(availableForRevenue);
+  console.log('💰 Revenue Champions:', revenueChampions.length);
   revenueChampions.forEach(p => assignedProductIds.add(p.variantId));
 
   // 3. Sleeper Hits
   const availableForSleeper = enrichedProducts.filter(p => !assignedProductIds.has(p.variantId));
   const sleeperHits = identifySleeperHits(availableForSleeper, segmentAverages, vendorSummary, categorySummary);
+  console.log('😴 Sleeper Hits:', sleeperHits.length);
   sleeperHits.forEach(p => assignedProductIds.add(p.variantId));
 
   // 4. Duds
   const availableForDuds = enrichedProducts.filter(p => !assignedProductIds.has(p.variantId));
   const duds = identifyDuds(availableForDuds, dropStartTime);
+  console.log('💔 Duds:', duds.length);
   duds.forEach(p => assignedProductIds.add(p.variantId));
 
   // 5. Slow Movers (lowest priority)
   const availableForSlow = enrichedProducts.filter(p => !assignedProductIds.has(p.variantId));
   const slowMovers = identifySlowMovers(availableForSlow, dropEndTime);
+  console.log('🐌 Slow Movers:', slowMovers.length);
 
   return {
     starPerformers,

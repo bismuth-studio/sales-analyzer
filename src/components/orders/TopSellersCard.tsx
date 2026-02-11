@@ -23,7 +23,7 @@ export const TopSellersCard: React.FC<TopSellersCardProps> = ({
           )}
         </InlineStack>
         <Text as="p" variant="bodySm" tone="subdued">
-          Best performing products during this drop
+          Ranked by total units sold during this drop
         </Text>
         {topProducts && topProducts.length > 0 ? (
           <BlockStack gap="200">
