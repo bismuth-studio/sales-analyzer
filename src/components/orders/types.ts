@@ -15,6 +15,7 @@ export interface Order {
   total_line_items_price: string;
   currency: string;
   financial_status: string;
+  fulfillment_status?: string;
   tags: string;
   customer?: {
     id: number;
@@ -120,6 +121,21 @@ export interface SalesMetrics {
   refundedOrdersCount: number;
   netSales: number;
   avgOrderValue: number;
+  fulfillmentStatus?: {
+    unfulfilled: number;
+    partial: number;
+    fulfilled: number;
+  };
+  overallSellThroughRate?: number;
+  peakOrderTime?: {
+    hour: number;
+    orderCount: number;
+    displayText: string;
+  };
+  orderVelocity?: {
+    ordersPerHour: number;
+    ordersPerDay: number;
+  };
 }
 
 export interface CustomerMetrics {

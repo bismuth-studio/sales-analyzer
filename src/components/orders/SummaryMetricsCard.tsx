@@ -3,7 +3,9 @@ import {
   Card,
   Text,
   BlockStack,
+  InlineGrid,
   InlineStack,
+  EmptyState,
 } from '@shopify/polaris';
 import type { SalesMetrics, CustomerMetrics, TopProduct } from './types';
 
@@ -36,104 +38,195 @@ export const SummaryMetricsCard: React.FC<SummaryMetricsCardProps> = ({
   const { uniqueCustomers = 0, newCustomers = 0, returningCustomers = 0 } = customerMetrics || {};
 
   return (
-    <Card>
-      <BlockStack gap="400">
-        <Text as="h2" variant="headingLg">
-          Drop Summary
-        </Text>
-        <Text as="p" variant="bodySm" tone="subdued">
-          Key metrics and statistics for your drop including revenue, orders, and customer data
-        </Text>
-        {/* Row 1: Sales Metrics */}
-        <InlineStack gap="800" align="start" wrap>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              Gross Sales
-            </Text>
-            <Text as="p" variant="headingLg">
-              {formatCurrency(grossSales)}
-            </Text>
-          </BlockStack>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              Discounts
-            </Text>
-            <Text as="p" variant="headingLg" tone={totalDiscounts > 0 ? 'caution' : undefined}>
-              -{formatCurrency(totalDiscounts)}
-            </Text>
-          </BlockStack>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              Returns
-            </Text>
-            <Text as="p" variant="headingLg" tone={refundedOrdersCount > 0 ? 'critical' : undefined}>
-              {refundedOrdersCount.toLocaleString()}
-            </Text>
-          </BlockStack>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              Net Sales
-            </Text>
-            <Text as="p" variant="headingLg" fontWeight="bold">
-              {formatCurrency(netSales)}
-            </Text>
-          </BlockStack>
-        </InlineStack>
-        {/* Row 2: Orders & Customers */}
-        <InlineStack gap="800" align="start" wrap>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              Orders
-            </Text>
-            <Text as="p" variant="headingLg">
-              {totalOrders.toLocaleString()}
-            </Text>
-          </BlockStack>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              Avg Order Value
-            </Text>
-            <Text as="p" variant="headingLg">
-              {formatCurrency(avgOrderValue)}
-            </Text>
-          </BlockStack>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              Items Sold
-            </Text>
-            <Text as="p" variant="headingLg">
-              {totalItemsSold.toLocaleString()}
-            </Text>
-          </BlockStack>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              Customers
-            </Text>
-            <Text as="p" variant="headingLg">
-              {uniqueCustomers.toLocaleString()}
-            </Text>
-          </BlockStack>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              New Customers
-            </Text>
-            <Text as="p" variant="headingLg" tone="success">
-              {newCustomers.toLocaleString()}
-            </Text>
-          </BlockStack>
-          <BlockStack gap="100">
-            <Text as="p" variant="bodySm" tone="subdued">
-              Returning
-            </Text>
-            <Text as="p" variant="headingLg">
-              {returningCustomers.toLocaleString()}
-            </Text>
-          </BlockStack>
-        </InlineStack>
-        {topProducts && topProducts.length > 0 && (
-          <BlockStack gap="200">
-            <Text as="p" variant="bodySm" tone="subdued">Top Sellers</Text>
-            <InlineStack gap="400" align="start">
+    <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
+      {/* Card 1: Drop Summary Metrics */}
+      <Card>
+        <BlockStack gap="400">
+          <Text as="h2" variant="headingLg">
+            Drop Summary
+          </Text>
+          <Text as="p" variant="bodySm" tone="subdued">
+            Key metrics and statistics for your drop including revenue, orders, and customer data
+          </Text>
+          {/* Row 1: Sales Metrics */}
+          <InlineStack gap="800" align="start" wrap>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Gross Sales
+              </Text>
+              <Text as="p" variant="heading2xl">
+                {formatCurrency(grossSales)}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Discounts
+              </Text>
+              <Text as="p" variant="heading2xl" tone={totalDiscounts > 0 ? 'caution' : undefined}>
+                -{formatCurrency(totalDiscounts)}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Returns
+              </Text>
+              <Text as="p" variant="heading2xl" tone={refundedOrdersCount > 0 ? 'critical' : undefined}>
+                {refundedOrdersCount.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Net Sales
+              </Text>
+              <Text as="p" variant="heading2xl" fontWeight="bold">
+                {formatCurrency(netSales)}
+              </Text>
+            </BlockStack>
+          </InlineStack>
+          {/* Row 2: Orders & Customers */}
+          <InlineStack gap="800" align="start" wrap>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Orders
+              </Text>
+              <Text as="p" variant="heading2xl">
+                {totalOrders.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Avg Order Value
+              </Text>
+              <Text as="p" variant="heading2xl">
+                {formatCurrency(avgOrderValue)}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Items Sold
+              </Text>
+              <Text as="p" variant="heading2xl">
+                {totalItemsSold.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Customers
+              </Text>
+              <Text as="p" variant="heading2xl">
+                {uniqueCustomers.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                New Customers
+              </Text>
+              <Text as="p" variant="heading2xl" tone="success">
+                {newCustomers.toLocaleString()}
+              </Text>
+            </BlockStack>
+            <BlockStack gap="100">
+              <Text as="p" variant="bodySm" tone="subdued">
+                Returning
+              </Text>
+              <Text as="p" variant="heading2xl">
+                {returningCustomers.toLocaleString()}
+              </Text>
+            </BlockStack>
+          </InlineStack>
+          {/* Row 3: Performance Metrics */}
+          <InlineStack gap="800" align="start" wrap>
+            {/* Fulfillment Status */}
+            {salesMetrics.fulfillmentStatus && (
+              <>
+                <BlockStack gap="100">
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Unfulfilled
+                  </Text>
+                  <Text as="p" variant="heading2xl" tone={salesMetrics.fulfillmentStatus.unfulfilled > 0 ? 'caution' : undefined}>
+                    {salesMetrics.fulfillmentStatus.unfulfilled.toLocaleString()}
+                  </Text>
+                </BlockStack>
+                <BlockStack gap="100">
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Partial
+                  </Text>
+                  <Text as="p" variant="heading2xl">
+                    {salesMetrics.fulfillmentStatus.partial.toLocaleString()}
+                  </Text>
+                </BlockStack>
+                <BlockStack gap="100">
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Fulfilled
+                  </Text>
+                  <Text as="p" variant="heading2xl" tone="success">
+                    {salesMetrics.fulfillmentStatus.fulfilled.toLocaleString()}
+                  </Text>
+                </BlockStack>
+              </>
+            )}
+
+            {/* Overall Sell-through Rate */}
+            {salesMetrics.overallSellThroughRate !== undefined && (
+              <BlockStack gap="100">
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Sell-through Rate
+                </Text>
+                <Text
+                  as="p"
+                  variant="heading2xl"
+                  tone={
+                    salesMetrics.overallSellThroughRate >= 80 ? 'success' :
+                    salesMetrics.overallSellThroughRate >= 50 ? undefined :
+                    'caution'
+                  }
+                >
+                  {salesMetrics.overallSellThroughRate.toFixed(1)}%
+                </Text>
+              </BlockStack>
+            )}
+
+            {/* Peak Order Time */}
+            {salesMetrics.peakOrderTime && (
+              <BlockStack gap="100">
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Peak Order Time
+                </Text>
+                <Text as="p" variant="heading2xl">
+                  {salesMetrics.peakOrderTime.displayText}
+                </Text>
+              </BlockStack>
+            )}
+
+            {/* Order Velocity */}
+            {salesMetrics.orderVelocity && (
+              <BlockStack gap="100">
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Order Velocity
+                </Text>
+                <Text as="p" variant="heading2xl">
+                  {salesMetrics.orderVelocity.ordersPerHour.toFixed(1)}/hr
+                </Text>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  ({salesMetrics.orderVelocity.ordersPerDay.toFixed(0)}/day)
+                </Text>
+              </BlockStack>
+            )}
+          </InlineStack>
+        </BlockStack>
+      </Card>
+
+      {/* Card 2: Top Sellers */}
+      <Card>
+        <BlockStack gap="400">
+          <Text as="h2" variant="headingLg">
+            Top Sellers
+          </Text>
+          <Text as="p" variant="bodySm" tone="subdued">
+            Best performing products during this drop
+          </Text>
+          {topProducts && topProducts.length > 0 ? (
+            <BlockStack gap="300">
               {topProducts.map((p, rank) => {
                 const imageUrl = productImages[String(p.productId)];
                 return (
@@ -146,7 +239,7 @@ export const SummaryMetricsCard: React.FC<SummaryMetricsCardProps> = ({
                       padding: '12px',
                       backgroundColor: '#f6f6f7',
                       borderRadius: '8px',
-                      minWidth: '200px',
+                      width: '100%',
                     }}
                   >
                     <div
@@ -189,7 +282,7 @@ export const SummaryMetricsCard: React.FC<SummaryMetricsCardProps> = ({
                         }}
                       />
                     )}
-                    <div style={{ overflow: 'hidden' }}>
+                    <div style={{ overflow: 'hidden', flex: 1 }}>
                       <Text as="p" variant="bodySm" fontWeight="semibold" truncate>
                         {p.title}
                       </Text>
@@ -200,10 +293,17 @@ export const SummaryMetricsCard: React.FC<SummaryMetricsCardProps> = ({
                   </div>
                 );
               })}
-            </InlineStack>
-          </BlockStack>
-        )}
-      </BlockStack>
-    </Card>
+            </BlockStack>
+          ) : (
+            <EmptyState
+              heading="No sales data yet"
+              image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+            >
+              <p>Top selling products will appear here once orders are placed during this drop.</p>
+            </EmptyState>
+          )}
+        </BlockStack>
+      </Card>
+    </InlineGrid>
   );
 };

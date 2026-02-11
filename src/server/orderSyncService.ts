@@ -258,6 +258,7 @@ async function runOrderSync(
               }
               currencyCode
               displayFinancialStatus
+              displayFulfillmentStatus
               tags
               customer {
                 id
@@ -348,6 +349,7 @@ async function runOrderSync(
         total_discounts: node.totalDiscountsSet?.shopMoney?.amount || '0',
         currency: node.currencyCode,
         financial_status: node.displayFinancialStatus?.toLowerCase() || 'pending',
+        fulfillment_status: node.displayFulfillmentStatus?.toLowerCase() || 'unfulfilled',
         tags: node.tags.join(', '),
         customer: node.customer ? {
           id: parseInt(node.customer.legacyResourceId, 10),

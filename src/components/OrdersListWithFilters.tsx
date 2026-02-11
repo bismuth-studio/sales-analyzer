@@ -39,6 +39,7 @@ interface Order {
   total_line_items_price: string;
   currency: string;
   financial_status: string;
+  fulfillment_status?: string;
   tags: string;
   customer?: {
     id: number;
@@ -1611,8 +1612,121 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
     const netSales = grossSales - totalDiscounts - totalRefunds;
     const avgOrderValue = totalOrders > 0 ? netSales / totalOrders : 0;
 
-    return { totalOrders, totalItemsSold, grossSales, totalDiscounts, totalRefunds, refundedOrdersCount, netSales, avgOrderValue };
-  }, [sortedOrders]);
+    // NEW METRIC 1: Fulfillment Status Breakdown
+    let fulfillmentStatus: { unfulfilled: number; partial: number; fulfilled: number } | undefined;
+    const hasFulfillmentData = sortedOrders.some(o => o.fulfillment_status);
+
+    if (hasFulfillmentData) {
+      fulfillmentStatus = {
+        unfulfilled: sortedOrders.filter(o => o.fulfillment_status === 'unfulfilled').length,
+        partial: sortedOrders.filter(o => o.fulfillment_status === 'partial').length,
+        fulfilled: sortedOrders.filter(o => o.fulfillment_status === 'fulfilled').length,
+      };
+    }
+
+    // NEW METRIC 2: Overall Sell-through Rate
+    let overallSellThroughRate: number | undefined;
+
+    if (parsedSnapshot) {
+      // Calculate total initial inventory across all variants that were sold
+      const variantIds = new Set<number>();
+      sortedOrders.forEach(order => {
+        order.line_items.forEach(item => {
+          if (item.variant_id) variantIds.add(item.variant_id);
+        });
+      });
+
+      let totalInitialInventory = 0;
+      variantIds.forEach(variantId => {
+        const unitsSold = sortedOrders.reduce((sum, order) => {
+          return sum + order.line_items
+            .filter(item => item.variant_id === variantId)
+            .reduce((itemSum, item) => itemSum + item.quantity, 0);
+        }, 0);
+
+        const initialInv = getInitialInventory(variantId, unitsSold);
+        totalInitialInventory += initialInv;
+      });
+
+      overallSellThroughRate = totalInitialInventory > 0
+        ? (totalItemsSold / totalInitialInventory) * 100
+        : undefined;
+    }
+
+    // NEW METRIC 3: Peak Order Time
+    let peakOrderTime: { hour: number; orderCount: number; displayText: string } | undefined;
+
+    // Calculate peak time if we have orders (works in both drop mode and explore mode)
+    if (sortedOrders.length > 0) {
+      const hourlyBuckets = new Map<number, number>();
+
+      sortedOrders.forEach(order => {
+        const orderDate = new Date(order.created_at);
+        const hour = orderDate.getHours();
+        hourlyBuckets.set(hour, (hourlyBuckets.get(hour) || 0) + 1);
+      });
+
+      let maxHour = 0;
+      let maxCount = 0;
+      hourlyBuckets.forEach((count, hour) => {
+        if (count > maxCount) {
+          maxCount = count;
+          maxHour = hour;
+        }
+      });
+
+      if (maxCount > 0) {
+        // Format as "2pm-3pm" style
+        const formatHour = (h: number) => {
+          if (h === 0) return '12am';
+          if (h === 12) return '12pm';
+          return h < 12 ? `${h}am` : `${h - 12}pm`;
+        };
+
+        const nextHour = (maxHour + 1) % 24;
+        peakOrderTime = {
+          hour: maxHour,
+          orderCount: maxCount,
+          displayText: `${formatHour(maxHour)}-${formatHour(nextHour)} (${maxCount})`,
+        };
+      }
+    }
+
+    // NEW METRIC 4: Order Velocity
+    let orderVelocity: { ordersPerHour: number; ordersPerDay: number } | undefined;
+
+    // Use drop dates if available, otherwise use filter dates (for explore mode)
+    const startTime = dropStartTime || (filterStartDate && filterStartTime ? `${filterStartDate}T${filterStartTime}` : null);
+    const endTime = dropEndTime || (filterEndDate && filterEndTime ? `${filterEndDate}T${filterEndTime}` : null);
+
+    if (startTime && endTime && totalOrders > 0) {
+      const startMs = new Date(startTime).getTime();
+      const endMs = new Date(endTime).getTime();
+      const durationHours = (endMs - startMs) / (1000 * 60 * 60);
+
+      if (durationHours > 0) {
+        const ordersPerHour = totalOrders / durationHours;
+        const ordersPerDay = ordersPerHour * 24;
+
+        orderVelocity = { ordersPerHour, ordersPerDay };
+      }
+    }
+
+    return {
+      totalOrders,
+      totalItemsSold,
+      grossSales,
+      totalDiscounts,
+      totalRefunds,
+      refundedOrdersCount,
+      netSales,
+      avgOrderValue,
+      fulfillmentStatus,
+      overallSellThroughRate,
+      peakOrderTime,
+      orderVelocity,
+    };
+  }, [sortedOrders, dropStartTime, dropEndTime, parsedSnapshot, getInitialInventory, filterStartDate, filterStartTime, filterEndDate, filterEndTime]);
 
   const { totalOrders, totalItemsSold, grossSales, totalDiscounts, totalRefunds, refundedOrdersCount, netSales, avgOrderValue } = salesMetrics;
 
