@@ -339,6 +339,7 @@ async function runOrderSync(
 
       return {
         id: parseInt(node.legacyResourceId, 10),
+        name: node.name,
         order_number: parseInt(node.name.replace('#', ''), 10),
         email: node.email,
         created_at: node.createdAt,
