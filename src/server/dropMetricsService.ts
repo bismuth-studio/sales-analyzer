@@ -7,19 +7,7 @@
 import { getOrdersByShop } from './sessionStorage';
 import { runDatabaseOperation } from './database';
 import type { Drop, DropMetrics } from './databaseWorker';
-
-interface Order {
-  id: number | string;
-  created_at: string;
-  total_line_items_price?: string;
-  total_price?: string;
-  total_discounts?: string;
-  refunds?: Array<{
-    transactions: Array<{
-      amount?: string;
-    }>;
-  }>;
-}
+import type { Order } from '../types';
 
 /**
  * Calculate metrics for a single drop

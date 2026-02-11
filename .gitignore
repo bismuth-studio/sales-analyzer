@@ -6,3 +6,7 @@ dist/
 .DS_Store
 *.log
 data/
+
+# Prevent compiled JS files in source directories
+src/**/*.js
+src/**/*.js.map

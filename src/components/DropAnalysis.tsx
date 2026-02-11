@@ -28,6 +28,7 @@ import {
   type OrderAnalysisData,
 } from './orders';
 import type { DropPerformanceScore } from '../utils/dropScore';
+import { formatCurrency as defaultFormatCurrency } from '../utils/formatting';
 import { useOrderAnalysis } from '../hooks/useOrderAnalysis';
 
 interface Drop {
@@ -160,7 +161,7 @@ function DropAnalysis({ shop }: DropAnalysisProps) {
   const status = getDropStatus(drop);
 
   // Extract data from orderData or use defaults
-  const formatCurrency = orderData?.formatCurrency || ((amount: number) => `$${amount.toFixed(2)}`);
+  const formatCurrency = orderData?.formatCurrency || defaultFormatCurrency;
   const salesMetrics = orderData?.salesMetrics || {
     totalOrders: 0,
     totalItemsSold: 0,

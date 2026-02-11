@@ -15,6 +15,7 @@ import { PlusIcon } from '@shopify/polaris-icons';
 import { useNavigate } from 'react-router-dom';
 import DropModal from './DropModal';
 import OrdersListWithFilters from './OrdersListWithFilters';
+import { formatCurrency } from '../utils/formatting';
 
 interface Drop {
   id: string;
@@ -140,12 +141,6 @@ function Dashboard({ shop }: DashboardProps) {
     });
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
-  };
 
   const getDropStatus = (drop: Drop): { status: 'success' | 'attention' | 'info'; label: string } => {
     const now = new Date();

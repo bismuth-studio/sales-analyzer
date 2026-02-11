@@ -8,6 +8,13 @@ import type {
   VendorSummary,
   CategorySummary,
 } from '../components/orders/types';
+import {
+  STAR_PERFORMER_CRITERIA,
+  REVENUE_CHAMPION_CRITERIA,
+  SLEEPER_HIT_CRITERIA,
+  SLOW_MOVER_CRITERIA,
+  DUD_CRITERIA,
+} from '../constants';
 
 export interface ProductWithRankingData extends ProductSummary {
   productType?: string;
@@ -67,11 +74,11 @@ function calculateSegmentAverages(
   const byProductType = new Map<string, number>();
 
   // Group by vendor
-  const vendorGroups = new Map<string, ProductSummary[]>();
+  const vendorGroups = new Map<string, AggregatedProductSummary[]>();
   aggregatedProducts.forEach(p => {
     const vendor = p.vendor || 'Unknown';
     if (!vendorGroups.has(vendor)) vendorGroups.set(vendor, []);
-    vendorGroups.get(vendor)!.push(p as ProductSummary);
+    vendorGroups.get(vendor)!.push(p);
   });
 
   vendorGroups.forEach((products, vendor) => {
@@ -80,11 +87,11 @@ function calculateSegmentAverages(
   });
 
   // Group by category
-  const categoryGroups = new Map<string, ProductSummary[]>();
+  const categoryGroups = new Map<string, AggregatedProductSummary[]>();
   aggregatedProducts.forEach(p => {
     const category = p.category || 'Unknown';
     if (!categoryGroups.has(category)) categoryGroups.set(category, []);
-    categoryGroups.get(category)!.push(p as ProductSummary);
+    categoryGroups.get(category)!.push(p);
   });
 
   categoryGroups.forEach((products, category) => {
@@ -93,11 +100,11 @@ function calculateSegmentAverages(
   });
 
   // Group by product type
-  const typeGroups = new Map<string, ProductSummary[]>();
+  const typeGroups = new Map<string, AggregatedProductSummary[]>();
   aggregatedProducts.forEach(p => {
     const type = p.productType || 'Unknown';
     if (!typeGroups.has(type)) typeGroups.set(type, []);
-    typeGroups.get(type)!.push(p as ProductSummary);
+    typeGroups.get(type)!.push(p);
   });
 
   typeGroups.forEach((products, type) => {
@@ -138,10 +145,10 @@ function identifyStarPerformers(
   const candidates = products.filter(p => {
     const velocity = calculateVelocity(p, dropStartTime, dropEndTime);
     // Adjusted: Lowered from 70% to 50% sell-through, more lenient velocity
-    const passesVelocity = velocity !== null ? velocity < 0.7 : p.sellThroughRate > 70;
-    const passes = p.sellThroughRate > 50 && passesVelocity && p.unitsSold >= 3;
+    const passesVelocity = velocity !== null ? velocity < STAR_PERFORMER_CRITERIA.MAX_VELOCITY_RATIO : p.sellThroughRate > 70;
+    const passes = p.sellThroughRate > STAR_PERFORMER_CRITERIA.MIN_SELL_THROUGH && passesVelocity && p.unitsSold >= STAR_PERFORMER_CRITERIA.MIN_UNITS_SOLD;
 
-    if (p.sellThroughRate > 30) { // Log products with decent sell-through
+    if (p.sellThroughRate > STAR_PERFORMER_CRITERIA.DECENT_SELL_THROUGH) { // Log products with decent sell-through
       console.log(`  - ${p.productName}: sell-through=${p.sellThroughRate.toFixed(1)}%, units=${p.unitsSold}, velocity=${velocity ? velocity.toFixed(2) : 'none'}, passes=${passes}`);
     }
 

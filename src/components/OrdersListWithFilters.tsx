@@ -16,6 +16,7 @@ import {
 import { RefreshIcon } from '@shopify/polaris-icons';
 import { calculateDropPerformanceScore, type DropPerformanceScore } from '../utils/dropScore';
 import { rankProducts } from '../utils/productRanking';
+import { formatCurrency } from '../utils/formatting';
 import {
   SummaryMetricsCard,
   SoldOutVariantsSection,
@@ -27,105 +28,17 @@ import {
   type ProductSummary,
 } from './orders';
 import { getClientConfig } from '../client/services/config';
+import type {
+  Order,
+  AggregatedProductSummary,
+  VendorSummary,
+  ColorSummary,
+  SizeSummary,
+  ProductTypeSummary,
+  CategorySummary,
+} from '../types';
 
-interface Order {
-  id: number;
-  name: string;
-  email: string;
-  created_at: string;
-  total_price: string;
-  subtotal_price: string;
-  total_discounts: string;
-  total_line_items_price: string;
-  currency: string;
-  financial_status: string;
-  fulfillment_status?: string;
-  tags: string;
-  customer?: {
-    id: number;
-    email: string;
-    orders_count: number;
-  } | null;
-  refunds?: Array<{
-    id: number;
-    created_at: string;
-    transactions: Array<{
-      amount: string;
-    }>;
-  }>;
-  line_items: Array<{
-    id: number;
-    title: string;
-    quantity: number;
-    price: string;
-    variant_title: string | null;
-    sku: string | null;
-    product_id: number;
-    variant_id: number;
-    vendor: string | null;
-    product_type: string | null;
-  }>;
-}
-
-interface AggregatedProductSummary {
-  productId: number;
-  productName: string;
-  productType: string;
-  vendor: string;
-  category: string;
-  unitsSold: number;
-  remainingInventory: number;
-  totalRevenue: number;
-  currency: string;
-  sellThroughRate: number;
-  revenuePercentage: number;
-  imageUrl?: string;
-}
-
-interface VendorSummary {
-  vendor: string;
-  productCount: number;
-  unitsSold: number;
-  totalRevenue: number;
-  currency: string;
-  revenuePercentage: number;
-}
-
-interface ColorSummary {
-  color: string;
-  variantCount: number;
-  unitsSold: number;
-  totalRevenue: number;
-  currency: string;
-  revenuePercentage: number;
-}
-
-interface SizeSummary {
-  size: string;
-  variantCount: number;
-  unitsSold: number;
-  totalRevenue: number;
-  currency: string;
-  revenuePercentage: number;
-}
-
-interface ProductTypeSummary {
-  productType: string;
-  productCount: number;
-  unitsSold: number;
-  totalRevenue: number;
-  currency: string;
-  revenuePercentage: number;
-}
-
-interface CategorySummary {
-  category: string;
-  productCount: number;
-  unitsSold: number;
-  totalRevenue: number;
-  currency: string;
-  revenuePercentage: number;
-}
+// All interfaces now imported from centralized ../types location
 
 interface OrdersListProps {
   shop: string;
@@ -1787,10 +1700,7 @@ const OrdersListWithFilters: React.FC<OrdersListProps> = ({
       .slice(0, 4);
   }, [sortedOrders]);
 
-  // Helper function to format currency
-  const formatCurrency = useCallback((amount: number) => {
-    return '$' + amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }, []);
+  // formatCurrency is now imported from shared utils
 
   // Memoize the calculated data object for performance
   const calculatedData: OrderAnalysisData = useMemo(() => {

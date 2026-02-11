@@ -15,13 +15,14 @@ import type {
   DatabaseOperation,
   DropMetrics,
 } from './databaseWorker';
+import { DATABASE_TIMEOUTS, WORKER_POOL_CONFIG } from '../constants';
 
 // Re-export types for consumers
 export type { Drop, CreateDropInput, UpdateDropInput, UpdateInventoryInput, DropMetrics };
 
-// Query timeout (5 seconds max for reads, 10 seconds for writes)
-const READ_TIMEOUT = 5000;
-const WRITE_TIMEOUT = 10000;
+// Query timeouts from centralized constants
+const READ_TIMEOUT = DATABASE_TIMEOUTS.READ;
+const WRITE_TIMEOUT = DATABASE_TIMEOUTS.WRITE;
 
 // Initialize worker pool
 // Determine the worker file path based on whether we're running compiled JS or TS
@@ -42,9 +43,9 @@ const pool = new Piscina({
   filename: getWorkerFilename(),
   // Use a small pool since SQLite is single-writer anyway
   // Multiple workers would just queue on SQLite's lock
-  minThreads: 1,
-  maxThreads: 2,
-  idleTimeout: 60000, // Keep worker alive for 60s when idle
+  minThreads: WORKER_POOL_CONFIG.MIN_THREADS,
+  maxThreads: WORKER_POOL_CONFIG.MAX_THREADS,
+  idleTimeout: DATABASE_TIMEOUTS.WORKER_IDLE,
 });
 
 // Helper to run operations with timeout

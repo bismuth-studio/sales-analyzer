@@ -1,6 +1,14 @@
 // Drop Performance Score Calculation Utilities
 // Calculates a comprehensive 0-100 score for drop performance
 
+import type { Order, ProductSummary } from '../types';
+import {
+  MAX_SCORES,
+  VELOCITY_THRESHOLDS,
+  VELOCITY_SCORES,
+  VELOCITY_BONUS,
+} from '../constants';
+
 // ============================================================================
 // Type Definitions
 // ============================================================================
@@ -48,19 +56,7 @@ export interface ScoreCalculationInput {
   uniqueCustomers: number;
 }
 
-interface ProductSummary {
-  unitsSold: number;
-  remainingInventory: number;
-  totalRevenue: number;
-  sellThroughRate: number;
-  revenuePercentage: number;
-  soldOutAt?: string;
-}
-
-interface Order {
-  created_at: string;
-  [key: string]: any;
-}
+// ProductSummary and Order types now imported from centralized ../types location
 
 // ============================================================================
 // Main Calculation Function
@@ -159,7 +155,7 @@ function calculateVelocityScore(
   dropStartTime: string,
   dropEndTime: string
 ): ComponentScore {
-  const maxScore = 25;
+  const maxScore = MAX_SCORES.VELOCITY;
 
   if (productSummary.length === 0) {
     return {
@@ -202,16 +198,16 @@ function calculateVelocityScore(
   const velocityRatio = avgTimeToSellout / dropDuration;
 
   // Scoring curve based on how fast products sold out
-  let baseScore = 25;
-  if (velocityRatio < 0.1) baseScore = 25;      // Ultra-fast: < 10% of duration
-  else if (velocityRatio < 0.25) baseScore = 23; // Very fast: < 25% of duration
-  else if (velocityRatio < 0.5) baseScore = 20;  // Fast: < 50% of duration
-  else if (velocityRatio < 0.75) baseScore = 15; // Moderate: < 75% of duration
-  else baseScore = 10;                            // Slow: >= 75% of duration
+  let baseScore = VELOCITY_SCORES.ULTRA_FAST;
+  if (velocityRatio < VELOCITY_THRESHOLDS.ULTRA_FAST) baseScore = VELOCITY_SCORES.ULTRA_FAST;
+  else if (velocityRatio < VELOCITY_THRESHOLDS.VERY_FAST) baseScore = VELOCITY_SCORES.VERY_FAST;
+  else if (velocityRatio < VELOCITY_THRESHOLDS.FAST) baseScore = VELOCITY_SCORES.FAST;
+  else if (velocityRatio < VELOCITY_THRESHOLDS.MODERATE) baseScore = VELOCITY_SCORES.MODERATE;
+  else baseScore = VELOCITY_SCORES.SLOW;
 
   // Bonus: More products sold out = better
   const selloutPercentage = soldOutProducts.length / productSummary.length;
-  const bonus = selloutPercentage * 5; // Up to 5 bonus points
+  const bonus = selloutPercentage * VELOCITY_BONUS.MAX_BONUS;
 
   const finalScore = Math.min(maxScore, baseScore + bonus);
 
@@ -231,7 +227,7 @@ function calculateVelocityScore(
 function calculateSellThroughScore(
   productSummary: ProductSummary[]
 ): ComponentScore {
-  const maxScore = 25;
+  const maxScore = MAX_SCORES.SELL_THROUGH;
 
   if (productSummary.length === 0) {
     return {
@@ -274,7 +270,7 @@ function calculateRevenueScore(
   avgOrderValue: number,
   totalOrders: number
 ): ComponentScore {
-  const maxScore = 20;
+  const maxScore = MAX_SCORES.REVENUE;
 
   if (totalOrders === 0) {
     return {
@@ -322,7 +318,7 @@ function calculateEngagementScore(
   returningCustomers: number,
   uniqueCustomers: number
 ): ComponentScore {
-  const maxScore = 15;
+  const maxScore = MAX_SCORES.ENGAGEMENT;
 
   if (uniqueCustomers === 0) {
     return {
@@ -360,7 +356,7 @@ function calculateEngagementScore(
 function calculateDiversityScore(
   productSummary: ProductSummary[]
 ): ComponentScore {
-  const maxScore = 10;
+  const maxScore = MAX_SCORES.DIVERSITY;
 
   if (productSummary.length === 0) {
     return {
@@ -406,7 +402,7 @@ function calculateTimeEfficiencyScore(
   dropStartTime: string,
   dropEndTime: string
 ): ComponentScore {
-  const maxScore = 5;
+  const maxScore = MAX_SCORES.TIME_EFFICIENCY;
 
   if (orders.length === 0) {
     return {
