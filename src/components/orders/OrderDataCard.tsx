@@ -18,7 +18,7 @@ export const OrderDataCard: React.FC<OrderDataCardProps> = ({
       <InlineStack align="space-between" blockAlign="center">
         <InlineStack gap="200" blockAlign="center">
           <Text as="h2" variant="headingLg">
-            Order Data
+            Order Data Sync
           </Text>
           {lastSyncAt && (
             <Text as="span" variant="bodySm" tone="subdued">
