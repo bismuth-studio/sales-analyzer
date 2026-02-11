@@ -11,11 +11,16 @@ A comprehensive Shopify app for analyzing product drops with detailed sales trac
 - **Edit & Delete** - Full CRUD operations for managing your drops
 
 ### Analytics & Reporting
+- **Real-Time Metrics** - Server-side cached metrics with automatic updates via webhooks
 - **Sales Summary** - View total revenue, units sold, and average order value
-- **Product Performance** - Detailed breakdown by product and variant
+- **Product Performance** - Detailed breakdown by product and variant with intelligent ranking
+- **Performance Scoring** - Advanced algorithms to identify top-performing products
 - **Color-Based Analysis** - Track sales by product color with visual charts
+- **Size-Based Analysis** - Track sales patterns by product size
 - **Time-Based Trends** - Minute-by-minute sales data visualization
 - **Sell-Through Rates** - Calculate sell-through percentages with inventory tracking
+- **Sold-Out Tracking** - Monitor which variants have sold out
+- **Top Sellers Cards** - Highlighted display of best-performing products
 
 ### Inventory Management
 - **Automatic Snapshots** - Capture inventory at drop creation time
@@ -23,18 +28,26 @@ A comprehensive Shopify app for analyzing product drops with detailed sales trac
 - **CSV Import** - Bulk import inventory data from CSV files
 - **Hybrid Tracking** - Combine auto-captured data with manual overrides
 
+### Real-Time Order Sync
+- **Webhook Integration** - Automatic order sync via Shopify webhooks
+- **GraphQL API** - Fast, efficient data fetching using Shopify's GraphQL Admin API
+- **Background Processing** - Non-blocking order sync with worker threads
+- **Local Database** - SQLite cache for instant analytics without API calls
+- **Automatic Updates** - Drop metrics recalculate automatically when orders arrive
+
 ### Order Exploration
 - **Advanced Filtering** - Filter orders by date range, product, and collection
 - **Quick Drop Creation** - Create drops directly from filtered order views
-- **Real-time Data** - Live order data from your Shopify store
+- **Live Dashboard** - Real-time order data synced automatically via webhooks
+- **Summary Cards** - At-a-glance metrics for filtered order sets
 
 ### Built With
-- React + TypeScript
-- Shopify Polaris UI components
-- Shopify Polaris Viz for charts
-- Express backend
-- SQLite database (better-sqlite3)
-- Shopify Admin API
+- **Frontend**: React 18 + TypeScript, Shopify Polaris UI, Shopify Polaris Viz charts
+- **Backend**: Express 5 + TypeScript, Shopify GraphQL Admin API
+- **Database**: SQLite (better-sqlite3) with WAL mode and worker threads (Piscina)
+- **Real-Time**: Shopify webhooks with HMAC verification
+- **Performance**: Server-side caching, rate limiting, background sync
+- **Session Management**: Persistent SQLite session storage
 
 ## Quick Start
 
@@ -60,29 +73,48 @@ npm install
 ngrok http 3000
 ```
 
-Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`)
+Copy the HTTPS URL (e.g., `https://abc123.ngrok-free.dev`)
 
 ### 4. Configure Environment Variables
 
-Create or edit the `.env` file in the project root:
+Create a `.env.local` file in the project root (using the ngrok URL from step 3):
 
 ```env
+# Shopify App Configuration
 SHOPIFY_API_KEY=your_api_key_from_partner_dashboard
 SHOPIFY_API_SECRET=your_api_secret_from_partner_dashboard
-SHOPIFY_APP_URL=https://your-ngrok-url.ngrok.io
-SHOPIFY_SCOPES=read_orders,read_products,read_inventory
-SHOPIFY_ACCESS_TOKEN=shpat_xxxxx  # Optional - for testing scripts
+SHOPIFY_APP_URL=https://your-ngrok-url.ngrok-free.dev
+SHOPIFY_SCOPES=read_orders,read_products
 PORT=3000
 
+# Store Configuration (REQUIRED)
+SHOPIFY_STORE_URL=your-store.myshopify.com
+
 # Optional - For order generator script
+SHOPIFY_ACCESS_TOKEN=shpat_xxxxx
 DISCOUNT_CODE=10%off
 ```
 
 ### 5. Update App URLs in Shopify Partner Dashboard
 
 In your app settings, configure:
-- **App URL**: `https://your-ngrok-url.ngrok.io`
-- **Allowed redirection URL(s)**: `https://your-ngrok-url.ngrok.io/api/shopify/callback`
+- **App URL**: `https://your-ngrok-url.ngrok-free.dev`
+- **Allowed redirection URL(s)**: `https://your-ngrok-url.ngrok-free.dev/api/shopify/callback`
+
+### 5b. Configure Webhooks (Optional but Recommended)
+
+For real-time order syncing, configure these webhooks in your app settings:
+
+**GDPR Webhooks (Mandatory)**:
+- `customers/data_request`: `https://your-ngrok-url.ngrok-free.dev/api/webhooks/customers/data_request`
+- `customers/redact`: `https://your-ngrok-url.ngrok-free.dev/api/webhooks/customers/redact`
+- `shop/redact`: `https://your-ngrok-url.ngrok-free.dev/api/webhooks/shop/redact`
+
+**Optional Webhooks** (for real-time sync):
+- `orders/create`: `https://your-ngrok-url.ngrok-free.dev/api/webhooks/orders/create`
+- `orders/updated`: `https://your-ngrok-url.ngrok-free.dev/api/webhooks/orders/updated`
+
+> **Note**: Webhooks enable automatic order sync and drop metrics updates. Without them, you'll need to manually refresh order data.
 
 ### 6. Run the App
 
@@ -97,7 +129,7 @@ npm run dev:client  # Frontend dev server on port 3001
 
 ### 7. Install the App on Your Store
 
-1. Visit: `https://your-ngrok-url.ngrok.io/api/shopify/auth?shop=your-store.myshopify.com`
+1. Visit: `https://your-ngrok-url.ngrok-free.dev/api/shopify/auth?shop=your-store.myshopify.com`
 2. Follow the OAuth flow to install the app
 3. You'll be redirected to the Drop Analyzer dashboard
 
@@ -131,45 +163,72 @@ npm run dev:client  # Frontend dev server on port 3001
 ```
 drop-analyzer/
 ├── src/
-│   ├── server/                    # Express backend
-│   │   ├── index.ts               # Main server entry point
-│   │   ├── shopify.ts             # Shopify OAuth & API configuration
-│   │   ├── orders.ts              # Orders API endpoints
-│   │   ├── drops.ts               # Drops CRUD API endpoints
-│   │   └── database.ts            # SQLite database setup & migrations
-│   ├── client/                    # React frontend
-│   │   ├── index.tsx              # React entry point
-│   │   ├── App.tsx                # Main App component with routing
-│   │   └── styles.css             # Global styles
-│   └── components/                # React UI components
-│       ├── Dashboard.tsx          # Main dashboard with drops list
-│       ├── DropAnalysis.tsx       # Individual drop analysis page
-│       ├── DropModal.tsx          # Create/edit drop modal
-│       ├── OrdersList.tsx         # Basic orders list
-│       ├── OrdersListWithFilters.tsx  # Advanced order filtering
+│   ├── server/                           # Express backend
+│   │   ├── index.ts                      # Main server entry point
+│   │   ├── shopify.ts                    # Shopify OAuth & API configuration
+│   │   ├── orders.ts                     # Orders API endpoints
+│   │   ├── drops.ts                      # Drops CRUD API endpoints
+│   │   ├── webhooks.ts                   # Webhook handlers (GDPR, orders)
+│   │   ├── webhookVerification.ts        # HMAC webhook verification
+│   │   ├── sessionStorage.ts             # SQLite session & data storage
+│   │   ├── database.ts                   # Database worker pool
+│   │   ├── databaseAsync.ts              # Async database operations
+│   │   ├── databaseWorker.ts             # Worker thread for database
+│   │   ├── orderSyncService.ts           # GraphQL order sync service
+│   │   ├── dropMetricsService.ts         # Drop metrics calculation & caching
+│   │   ├── shopifyRateLimiter.ts         # API rate limiting
+│   │   ├── migrateDropMetrics.ts         # Database migration utilities
+│   │   └── routes/
+│   │       └── config.ts                 # Client configuration API
+│   ├── config/
+│   │   └── shopify.ts                    # Centralized Shopify configuration
+│   ├── utils/
+│   │   ├── productRanking.ts             # Product ranking algorithms
+│   │   └── dropScore.ts                  # Performance scoring system
+│   ├── client/                           # React frontend
+│   │   ├── index.tsx                     # React entry point
+│   │   ├── App.tsx                       # Main App component with routing
+│   │   └── styles.css                    # Global styles
+│   └── components/                       # React UI components
+│       ├── Dashboard.tsx                 # Main dashboard with drops list
+│       ├── DropAnalysis.tsx              # Individual drop analysis page
+│       ├── DropModal.tsx                 # Create/edit drop modal
+│       ├── OrdersList.tsx                # Basic orders list
+│       ├── OrdersListWithFilters.tsx     # Advanced order filtering
+│       ├── PerformanceScoreCard.tsx      # Performance metrics display
+│       ├── orders/                       # Order analysis components
+│       │   ├── FilterSection.tsx         # Order filtering UI
+│       │   ├── SummaryMetricsCard.tsx    # Summary metrics display
+│       │   ├── TopSellersCard.tsx        # Top selling products
+│       │   ├── PerformingProductsCard.tsx # Product performance rankings
+│       │   ├── SoldOutVariantsSection.tsx # Sold-out tracking
+│       │   ├── OrderDataCard.tsx         # Order data display
+│       │   └── types.ts                  # TypeScript interfaces
 │       └── InventoryManagement/
-│           ├── InventoryManagement.tsx  # Inventory tracking UI
-│           ├── InventoryTable.tsx       # Editable inventory table
-│           ├── CSVImportModal.tsx       # CSV import functionality
-│           └── InventoryTypes.ts        # TypeScript interfaces
-├── scripts/                       # Utility scripts
-│   ├── ultimate-order-generator.ts     # Generate realistic test orders
-│   ├── get-access-token.ts             # Get Shopify access token
-│   ├── create-products.js              # Create sample products
-│   ├── README-ORDER-GENERATOR.md       # Order generator documentation
-│   └── QUICK-START.md                  # Quick start guide
-├── data/                          # Database storage
-│   └── drops.db                   # SQLite database (auto-created)
-├── public/                        # Static assets
-│   └── index.html                 # HTML template
-├── dist/                          # Built files (generated)
-│   ├── client/                    # Built React app
-│   └── server/                    # Built Node.js server
-├── .env                           # Environment variables (create this)
-├── package.json                   # Dependencies and scripts
-├── tsconfig.json                  # TypeScript config for client
-├── tsconfig.server.json           # TypeScript config for server
-└── vite.config.ts                 # Vite bundler configuration
+│           ├── InventoryManagement.tsx   # Inventory tracking UI
+│           ├── InventoryTable.tsx        # Editable inventory table
+│           ├── CSVImportModal.tsx        # CSV import functionality
+│           └── InventoryTypes.ts         # TypeScript interfaces
+├── scripts/                              # Utility scripts
+│   ├── ultimate-order-generator.ts       # Generate realistic test orders
+│   ├── get-access-token.ts               # Get Shopify access token
+│   ├── create-products.js                # Create sample products
+│   ├── README-ORDER-GENERATOR.md         # Order generator documentation
+│   └── QUICK-START.md                    # Quick start guide
+├── data/                                 # Database storage
+│   ├── sessions.db                       # Sessions, orders, cache (auto-created)
+│   └── drops.db                          # Drops database (auto-created)
+├── public/                               # Static assets
+│   └── index.html                        # HTML template
+├── dist/                                 # Built files (generated)
+│   ├── client/                           # Built React app
+│   └── server/                           # Built Node.js server
+├── .env                                  # Environment variables (create this)
+├── .env.example                          # Example environment configuration
+├── package.json                          # Dependencies and scripts
+├── tsconfig.json                         # TypeScript config for client
+├── tsconfig.server.json                  # TypeScript config for server
+└── vite.config.ts                        # Vite bundler configuration
 ```
 
 ## Testing with Sample Data
@@ -205,6 +264,52 @@ npx tsx scripts/create-products.js
 This creates a set of sample products in your Shopify store for testing.
 
 ## Key Features Explained
+
+### Real-Time Webhook Sync
+
+The app uses Shopify webhooks for automatic, real-time order synchronization:
+
+1. **Automatic Sync**: When a new order is created in your store, Shopify sends a webhook to the app
+2. **HMAC Verification**: Webhooks are cryptographically verified to ensure authenticity
+3. **Background Processing**: Orders are processed in background worker threads without blocking the UI
+4. **Metrics Updates**: Drop metrics automatically recalculate when relevant orders arrive
+5. **GraphQL API**: Fast, efficient data fetching using Shopify's GraphQL Admin API
+
+**Benefits:**
+- No manual refresh needed - data updates automatically
+- Instant analytics as orders come in
+- Reduced API calls (data cached locally)
+- Works even when app is not open in browser
+
+**Manual Sync Available**: You can also trigger manual order sync from the dashboard if needed.
+
+### Server-Side Caching & Performance
+
+To provide instant analytics without hitting Shopify API limits:
+
+1. **Drop Metrics Cache**: Revenue, order count, discounts, and refunds are pre-calculated and stored
+2. **Product Metadata Cache**: Product images, types, vendors cached to avoid repeated API calls
+3. **Worker Threads**: Database operations run in separate threads (Piscina) for non-blocking performance
+4. **WAL Mode**: SQLite Write-Ahead Logging allows concurrent reads while writing
+5. **Smart Invalidation**: Caches automatically update when webhooks arrive
+
+**Result**: Dashboard loads instantly, even with thousands of orders.
+
+### Product Ranking & Intelligence
+
+Advanced algorithms identify your best-performing products:
+
+1. **Multi-Factor Ranking**: Considers revenue, units sold, sell-through rate, and order frequency
+2. **Performance Scoring**: Each product gets a score from 0-100 based on multiple metrics
+3. **Size Analysis**: Track which sizes sell best (S, M, L, XL, etc.)
+4. **Sold-Out Tracking**: Automatically identifies and highlights sold-out variants
+5. **Top Sellers Cards**: Visual cards highlighting your best performers
+
+**Use Cases:**
+- Identify products to restock
+- Spot trending colors or sizes
+- Find underperformers
+- Plan future drops based on data
 
 ### Drop Creation & Management
 
@@ -271,7 +376,7 @@ At the bottom of the dashboard, use the Order Explorer to:
 1. Make sure your `.env` file has correct `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET`
 2. Verify your ngrok URL is set in `SHOPIFY_APP_URL`
 3. Check that redirect URLs match in Shopify Partner Dashboard
-4. Try re-authenticating: Visit `https://your-ngrok-url.ngrok.io/api/shopify/auth?shop=your-store.myshopify.com`
+4. Try re-authenticating: Visit `https://your-ngrok-url.ngrok-free.dev/api/shopify/auth?shop=your-store.myshopify.com`
 
 ### No Data Showing
 
@@ -288,10 +393,14 @@ At the bottom of the dashboard, use the Order Explorer to:
 **Problem**: SQLite errors or database corruption
 
 **Solution**:
-1. The database is stored in `data/drops.db`
+1. The app uses two databases:
+   - `data/sessions.db` - Sessions, orders, product cache
+   - `data/drops.db` - Drop configuration and metrics
 2. Restart the server - migrations run automatically
-3. If corrupted, delete `data/drops.db` (you'll lose drop data)
-4. The server will recreate the database on next start
+3. If corrupted, you can delete either database file:
+   - Delete `data/sessions.db` - Lose OAuth sessions and cached orders (will re-sync)
+   - Delete `data/drops.db` - Lose all drop data (cannot be recovered)
+4. The server will recreate databases on next start
 
 ### Port Already in Use
 
@@ -325,23 +434,67 @@ PORT=3001
 3. Quantities must be valid numbers
 4. Check the browser console for specific error messages
 
+### Webhooks Not Working
+
+**Problem**: Orders aren't syncing automatically
+
+**Solution**:
+1. Check that webhooks are configured in Shopify Partner Dashboard
+2. Verify webhook URLs match your current ngrok/production URL
+3. Check server logs for webhook verification errors
+4. Ensure your server is accessible from the internet (ngrok running)
+5. Manually trigger sync from dashboard: "Sync Orders" button
+
+### Order Sync Fails
+
+**Problem**: "Order sync failed" or "GraphQL error"
+
+**Solution**:
+1. Check that your access token has `read_orders` and `read_products` scopes
+2. Verify `SHOPIFY_STORE_URL` is set correctly in `.env`
+3. Check server logs for specific GraphQL errors
+4. Try manual sync with smaller date ranges
+5. Rate limiting may be active - wait 1-2 minutes and retry
+
+### Metrics Not Updating
+
+**Problem**: Drop metrics show old data
+
+**Solution**:
+1. Check that webhooks are configured and working
+2. Manually trigger metrics refresh from drop detail page
+3. Check server logs for cache update errors
+4. Verify orders table has data: Check `data/sessions.db`
+5. Restart server to force metrics recalculation
+
 ## Technology Stack
 
 ### Frontend
 - **React 18** - UI library
 - **TypeScript** - Type-safe JavaScript
-- **Shopify Polaris** - Official Shopify design system
-- **Shopify Polaris Viz** - Data visualization components
-- **React Router DOM** - Client-side routing
-- **Vite** - Fast build tool and dev server
+- **Shopify Polaris 13.9** - Official Shopify design system
+- **Shopify Polaris Viz 16.16** - Data visualization components
+- **Shopify App Bridge React** - Embedded app integration
+- **React Router DOM 7** - Client-side routing
+- **Vite 7** - Fast build tool and dev server
 
 ### Backend
 - **Express 5** - Web server framework
 - **TypeScript** - Type-safe server code
 - **better-sqlite3** - Fast, synchronous SQLite database
-- **@shopify/shopify-api** - Official Shopify API library
+- **Piscina** - Worker thread pool for database operations
+- **@shopify/shopify-api 12.2** - Official Shopify API library (GraphQL)
+- **p-queue** - Promise queue for rate limiting
 - **CORS** - Cross-origin resource sharing
 - **dotenv** - Environment variable management
+
+### Real-Time & Performance
+- **Shopify Webhooks** - HMAC-verified webhook handlers
+- **GraphQL Admin API** - Efficient data fetching
+- **Server-Side Caching** - Drop metrics calculation and storage
+- **Worker Threads** - Non-blocking database operations
+- **WAL Mode SQLite** - Better concurrency for reads/writes
+- **Rate Limiting** - Shopify API quota management
 
 ### Development Tools
 - **Nodemon** - Auto-restart server on changes
@@ -369,12 +522,12 @@ npm start
 The server will:
 1. Serve the built React app from `dist/client`
 2. Handle API requests on the same port
-3. Use the SQLite database from `data/drops.db`
+3. Use SQLite databases: `data/sessions.db` (orders, cache) and `data/drops.db` (analytics)
 
 ### Deployment Considerations
 
 1. **Environment Variables**: Set all required environment variables on your hosting platform
-2. **Database**: The SQLite database file (`data/drops.db`) needs persistent storage
+2. **Databases**: Both SQLite database files (`data/sessions.db` and `data/drops.db`) need persistent storage
 3. **HTTPS Required**: Shopify apps must use HTTPS - use a reverse proxy or hosting platform with SSL
 4. **App URL**: Update `SHOPIFY_APP_URL` to your production domain
 5. **Shopify Partner Dashboard**: Update app URLs to production URLs
@@ -392,23 +545,106 @@ The server will:
 - `GET /api/shopify/auth` - Initiate OAuth flow
 - `GET /api/shopify/callback` - OAuth callback handler
 
+### Configuration
+- `GET /api/config` - Get client-safe configuration (API key, store URL)
+
 ### Drops
-- `GET /api/drops?shop=SHOP_NAME` - List all drops for a shop
+- `GET /api/drops?shop=SHOP_NAME` - List all drops for a shop (with cached metrics)
 - `GET /api/drops/:dropId` - Get a specific drop
-- `POST /api/drops` - Create a new drop
-- `PATCH /api/drops/:dropId` - Update a drop
+- `POST /api/drops` - Create a new drop (auto-captures inventory, calculates initial metrics)
+- `PUT /api/drops/:dropId` - Update a drop
 - `DELETE /api/drops/:dropId` - Delete a drop
+- `PUT /api/drops/:dropId/inventory` - Update inventory snapshot
+- `POST /api/drops/:dropId/inventory/snapshot` - Take fresh inventory snapshot
+- `POST /api/drops/:dropId/inventory/reset` - Reset to original snapshot
 
 ### Orders
-- `GET /api/orders?shop=SHOP_NAME` - Fetch orders with optional filters
-- `GET /api/orders/drop/:dropId` - Get orders for a specific drop
+- `GET /api/orders/recent?shop=SHOP_NAME` - Fetch cached orders with pagination
+- `POST /api/orders/sync?shop=SHOP_NAME` - Trigger manual order sync from Shopify
+- `GET /api/orders/sync-status?shop=SHOP_NAME` - Get order sync status
+- `POST /api/orders/product-images` - Batch fetch product images and metadata
+- `GET /api/orders/collections?shop=SHOP_NAME` - List all collections
+- `GET /api/orders/inventory?shop=SHOP_NAME&variantIds=...` - Get current inventory levels
+- `GET /api/orders/variants?shop=SHOP_NAME&variantIds=...` - Get variant metadata (SKU, names)
+
+### Webhooks (HMAC Verified)
+- `POST /api/webhooks/customers/data_request` - GDPR: Customer data request
+- `POST /api/webhooks/customers/redact` - GDPR: Customer data redaction
+- `POST /api/webhooks/shop/redact` - GDPR: Shop data redaction
+- `POST /api/webhooks/orders/create` - Real-time order creation sync
+- `POST /api/webhooks/orders/updated` - Real-time order update sync
 
 ### Health Check
-- `GET /api/health` - Check if the API is running
+- `GET /api/health` - Check API and database health
 
 ## Database Schema
 
-The app uses SQLite with the following schema:
+The app uses two SQLite databases with the following schemas:
+
+### sessions.db (Session & Order Data)
+
+```sql
+-- Shopify OAuth sessions
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  shop TEXT NOT NULL,
+  state TEXT,
+  is_online INTEGER NOT NULL DEFAULT 0,
+  scope TEXT,
+  access_token TEXT,
+  expires_at TEXT,
+  online_access_info TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Cached order data (synced via webhooks)
+CREATE TABLE orders (
+  id INTEGER NOT NULL,
+  shop TEXT NOT NULL,
+  name TEXT,
+  email TEXT,
+  created_at TEXT NOT NULL,
+  total_price TEXT,
+  subtotal_price TEXT,
+  total_discounts TEXT,
+  total_line_items_price TEXT,
+  currency TEXT,
+  financial_status TEXT,
+  tags TEXT,
+  customer_json TEXT,
+  refunds_json TEXT,
+  line_items_json TEXT NOT NULL,
+  synced_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (shop, id)
+);
+
+-- Product metadata cache
+CREATE TABLE product_cache (
+  id INTEGER PRIMARY KEY,
+  shop TEXT NOT NULL,
+  product_id TEXT NOT NULL,
+  image_url TEXT,
+  product_type TEXT,
+  vendor TEXT,
+  category TEXT,
+  cached_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(shop, product_id)
+);
+
+-- Order sync status tracking
+CREATE TABLE order_sync_status (
+  shop TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'idle',
+  total_orders INTEGER,
+  synced_orders INTEGER DEFAULT 0,
+  last_order_id TEXT,
+  started_at TEXT,
+  completed_at TEXT
+);
+```
+
+### drops.db (Drop Analytics)
 
 ```sql
 CREATE TABLE drops (
@@ -423,6 +659,12 @@ CREATE TABLE drops (
   snapshot_taken_at TEXT,
   inventory_source TEXT DEFAULT 'auto',
   original_inventory_snapshot TEXT,
+  net_sales REAL,
+  order_count INTEGER,
+  gross_sales REAL,
+  discounts REAL,
+  refunds REAL,
+  metrics_cached_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
