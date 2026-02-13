@@ -3,7 +3,7 @@ const { shopifyApi } = require('@shopify/shopify-api');
 require('@shopify/shopify-api/adapters/node');
 
 const { SHOPIFY_ACCESS_TOKEN, SHOPIFY_API_KEY, SHOPIFY_API_SECRET } = process.env;
-const SHOP = 'bismuth-dev.myshopify.com';
+const SHOP = 'hackalot-will.myshopify.com';
 
 // Initialize Shopify
 const shopify = shopifyApi({

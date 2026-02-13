@@ -5,7 +5,7 @@ import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 // Load environment variables
 config();
 
-const SHOP = 'bismuth-dev.myshopify.com';
+const SHOP = 'hackalot-will.myshopify.com';
 
 // ============================================================================
 // TYPE DEFINITIONS

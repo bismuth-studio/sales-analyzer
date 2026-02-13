@@ -9,7 +9,7 @@ import { getSession } from '../src/server/shopify';
 const app = express();
 
 app.get('/get-token', (req, res) => {
-  const shop = 'bismuth-dev.myshopify.com';
+  const shop = 'hackalot-will.myshopify.com';
   const session = getSession(shop);
 
   if (!session) {
